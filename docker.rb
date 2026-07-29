@@ -1424,4 +1424,41 @@ cheatsheet do
             name '输出帮助信息'
         end
     end
+
+    category do
+        id '集群'
+
+        entry do
+            name '主从架构'
+            notes <<-'END'
+                ```bash
+                # slave 执行
+                replicaof <master-host> <master-port>
+                ```
+            END
+        end
+    end
+
+    category do
+        id '快速启动'
+
+        entry do
+            name 'Redis'
+            notes <<-'END'
+                ```bash
+                docker pull redis:latest
+                docker run -d --name redis -p 6379:6379 redis:latest
+                ```
+            END
+        end
+        entry do
+            name 'MongoDB'
+            notes <<-'END'
+                ```bash
+                docker pull mongodb/mongodb-community-server:latest
+                docker run -d --name mongodb -p 27017:27017 mongodb/mongodb-community-server:latest
+                ```
+            END
+        end
+    end
 end
