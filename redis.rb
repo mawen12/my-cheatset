@@ -285,6 +285,7 @@ cheatsheet do
             END
         end
     end
+
     category do
         id 'Hashes'
 
@@ -296,6 +297,7 @@ cheatsheet do
             END
         end
     end
+
     category do
         id 'Sets'
 
@@ -307,6 +309,7 @@ cheatsheet do
             END
         end
     end
+
     category do
         id 'Lists'
 
@@ -318,6 +321,7 @@ cheatsheet do
             END
         end
     end
+
     category do
         id 'Sorted Sets'
 
@@ -329,6 +333,7 @@ cheatsheet do
             END
         end
     end
+
     category do
         id 'Client/Server'
 
@@ -340,6 +345,7 @@ cheatsheet do
             END
         end
     end
+
     category do
         id 'General'
 
@@ -351,6 +357,7 @@ cheatsheet do
             END
         end
     end
+    
     category do
         id 'Script'
 
