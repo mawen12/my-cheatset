@@ -32,7 +32,93 @@ cheatsheet do
         id 'web'
 
         entry do
+            command 'Go structs to JSON'
+            name ''
+        end
+    end
 
+    category do
+        id 'Handler'
+
+        entry do
+            command 'FileServer'
+            name '提供静态文件'
+            notes <<-'END'
+                func FileServer(root FileSystem) Handler
+
+                http.Handle("/images", http.FileServer(http.Dir("./images")))
+            END
+        end
+        entry do
+            command 'NotFoundHandler'
+            name '当没有路由匹配时，返回 404 page not found'
+            notes <<-'END'
+                func NotFoundHandler() Handler
+            END
+        end
+        entry do
+            command 'RedirectHandler'
+            name '路径重定向'
+            notes <<-'END'
+                func RedirectHandler(url string, code int) Handler
+            END
+        end
+        entry do
+            command 'StripPrefix'
+            name '移除路径的特定前缀'
+            notes <<-'END'
+                func StripPrefix(prefix string, h Handler) Handler
+            END
+        end
+        entry do
+            command 'TimeoutHandler'
+            name '返回限制超时的 Handler，超时后返回 503 Service Unavaiable 响应'
+            notes <<-'END'
+                func TimeoutHandler(h Handler, dt time.Duration, msg string) Handler
+            END
+        end
+    end
+
+    category do
+        id 'test'
+
+        entry do
+            command '-v'
+            name '详细输出'
+        end
+        entry do
+            command '--run'
+            name ''
+        end
+        entry do
+            command '-bench'
+            name ''
+        end
+        entry do
+            command '-benchtime'
+            name ''
+        end
+        entry do
+            command '-benchmem'
+            name ''
+        end
+        entry do
+            name '输出：ns/op'
+            notes <<-'END'
+                每次操作平均耗时（纳秒），越小越快
+            END
+        end
+        entry do
+            name '输出：B/op'
+            notes <<-'END'
+                每次操作平均分配的内存字节数，越小越好
+            END
+        end
+        entry do
+            name '输出：allocs/op'
+            notes <<-'END'
+                每次操作平均发生的内存分配次数，越小越好
+            END
         end
     end
 
