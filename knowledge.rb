@@ -249,4 +249,12 @@ cheatsheet do
             END
         end
     end
+
+    category do
+        id 'Performance'
+
+        entry do
+            command ''
+        end
+    end
 end

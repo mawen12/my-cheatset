@@ -2,6 +2,20 @@ cheatsheet do
     title 'Git 中文指南'
     docset_file_name 'Git'
     keyword 'git'
+    style '
+        code {
+            border: none;
+            white-space: pre;
+        }
+        
+        code::before, code::after {
+            content: "";
+        }
+
+        tr {
+            border-bottom: 2px dashed #b8b8b8;
+        }
+    '
 
     category do
         id '创建'
