@@ -548,4 +548,25 @@ cheatsheet do
             END
         end
     end
+
+    category do
+        id '安全'
+
+        entry do
+            command 'Authentication'
+            name '认证，解决登录的人是谁'
+        end
+        entry do
+            command 'Authorization'
+            name '授权，解决用户能不能访问某个资源'
+        end
+        entry do
+            command 'OIDC'
+            name '建立在 OAuth2.0 之上的身份认证协议，属于Authentication范畴，解决登录的人是谁'
+        end
+        entry do
+            command 'JWT'
+            name 'JSON Web Token，是一种用于在网络中安全传递信息的开放标准（RFC 7519），常用用途为：用户认证（Authentication）、服务间身份传递、授权信息传递'
+        end
+    end
 end
