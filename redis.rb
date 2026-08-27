@@ -350,10 +350,24 @@ cheatsheet do
         id 'General'
 
         entry do
-            command ''
-            name ''
+            command 'TTL'
+            name '返回键剩余的存活时间，-2 代表键不存在，-1 代表键未设置过期时间'
             notes <<-'END'
 
+            END
+        end
+        entry do
+            command 'TIME'
+            name '以两个元素列表的格式返回系统当前时间，第一个是Unix时间戳，第二个是当前秒内已过去的微秒数'
+            notes <<-'END'
+
+            END
+        end
+        entry do
+            command 'TYPE'
+            name '返回键对应值的类型，返回范围有：string、list、set、zset、hash、stream、vectorset'
+            notes <<-'END'
+                
             END
         end
     end
@@ -366,6 +380,84 @@ cheatsheet do
             name ''
             notes <<-'END'
 
+            END
+        end
+    end
+
+    category do
+        id '限流示例'
+
+        entry do
+            name '固定窗口'
+            notes <<-'END'
+                ```
+                -- 固定窗口限流器
+                -- KEYS[1]: 限流器唯一标识
+                -- ARGV[1]: 请求令牌数
+                -- ARGV[2]: 窗口间隔
+
+                local count = redis.call('INCR', KEYS[1])
+                if count == 1 then
+                    redis.call('EXPIRE', KEYS[1], ARGV[2])
+                end
+                local ttl = redis.call('TTL', KEYS[1])
+                if ttl < 0 then
+                    redis.call('EXPIRE', KEYS[1], ARGV[2])
+                    ttl = redis.call('TTL', KEYS[1])
+                end
+                if count > tonumber(ARGV[1]) then
+                    return {0, count, ttl}
+                end
+                return {1, count, ttl}
+                ```
+            END
+        end
+        entry do
+            name '滑动窗口'
+            notes <<-'END'
+                
+            END
+        end
+        entry do
+            name '令牌桶'
+            notes <<-'END'
+                -- 令牌桶限流器
+                -- KEYS[1]: 限流器唯一标识
+                -- ARGV[1]: 请求令牌数 (通常为1)
+                -- ARGV[2]: 令牌生成速率 (每秒)
+                -- ARGV[3]: 桶容量
+
+                local key = KEYS[1]
+                local requested = tonumber(ARGV[1])
+                local rate = tonumber(ARGV[2])
+                local capacity = tonumber(ARGV[3])
+
+                local now = redis.call('TIME')
+                local nowInSeconds = tonumber(now[1])
+
+                local bucket = redis.call('HMGET', key, 'tokens', 'last_time')
+                local tokens = tonumber(bucket[1])
+                local last_time = tonumber(bucket[2])
+
+                if not tokens or not last_time then
+                    tokens = capacity
+                    last_time = nowInSeconds
+                else
+                    local elapsed = nowInSeconds - last_time
+                    local add_tokens = elapsed * rate
+                    tokens = math.min(capacity, tokens * add_tokens)    
+                    last_time = nowInSeconds
+                end
+                
+                local allowed = false
+                if tokens > allowed then
+                    tokens = tokens - allowed
+                    allowed = true
+                end
+
+                redis.call('HMSET', key, 'tokens', tokens, 'last_time', last_time)
+                redis.call('EXPIRE', key, math.ceil(capacity / rate) + 60)
+                return allow and 1 or 0
             END
         end
     end
