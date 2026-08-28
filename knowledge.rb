@@ -536,15 +536,23 @@ cheatsheet do
             END
         end
         entry do
-            name ''
+            name '平方探测'
             notes <<-'END'
-
+                与线性探测类似，当发生冲突时，平方探测不是简单地跳过一个固定的步数，而是跳过“探测次数的平方”的步数，即1,4,9,..步。
+                优势：
+                    通过跳过探测次数平方的距离，试图缓解线性探测的聚集效应
+                    跳过更大的距离来寻找空位置，有助于数据分布得更加均匀
+                劣势：
+                    仍然存在聚集现象，即有些位置比其他位置更容易被占用
+                    由于平方的增长，平方探测可能不会探测整个哈希表，则意味着即使哈希表中有空桶，平方探测也可能无法访问到它
             END
         end
         entry do
-            name ''
+            name '多次哈希'
             notes <<-'END'
-
+                多次哈希方法使用多个哈希函数 f<sub>1</sub>(x)、f<sub>2</sub>(x)、f<sub>3</sub>(x)、... 进行探测。
+                插入元素：若哈希函数 f<sub>1</sub>(x) 出现冲突，则尝试 f<sub>2</sub>(x) 以此类推，直到找到空位后插入元素
+                查找元素：在相同的哈希函数顺序下查找，直到找到目标元素时返回；若遇到空位或已尝试所有哈希函数，说明哈希表中不存在该元素，则返回 None
             END
         end
     end
@@ -567,6 +575,129 @@ cheatsheet do
         entry do
             command 'JWT'
             name 'JSON Web Token，是一种用于在网络中安全传递信息的开放标准（RFC 7519），常用用途为：用户认证（Authentication）、服务间身份传递、授权信息传递'
+        end
+    end
+
+    category do
+        id '哈希算法'
+
+        header ''
+        header 'MD5'
+        header 'SHA-1'
+        header 'SHA-2'
+        header 'SHA-3'
+
+        entry do
+            name '推出时间'
+            td_notes '1992'
+            td_notes '1995'
+            td_notes '2002'
+            td_notes '2008'
+        end
+        entry do
+            name '输出长度'
+            td_notes '128 bit'
+            td_notes '160 bit'
+            td_notes '256/512 bit'
+            td_notes '224/256/384/512 bit'
+            td_command 
+            td_command 
+            td_command 
+        end
+        entry do
+            name '哈希冲突'
+            td_notes '较多'
+            td_notes '较多'
+            td_notes '很少'
+            td_notes '很少' 
+        end
+        entry do
+            name '安全等级'
+            td_notes '低，已被成功攻击'
+            td_notes '低，已被成功攻击'
+            td_notes '高'
+            td_notes '高'
+        end
+        entry do
+            name '引用'
+            td_notes '已被弃用，仍用于数据完整性检查'
+            td_notes '已被弃用'
+            td_notes '加密货币交易验证、数字签名等'
+            td_notes '可用于替代 SHA-2'
+        end
+    end
+
+    category do
+        id '树'
+
+        entry do
+            command '根节点（root node）'
+            name '位于二叉树顶层的节点，没有父节点'
+        end
+        entry do
+            command '叶节点（leaf node）'
+            name '没有子节点的节点，其两个指针均指向 None'
+        end
+        entry do
+            command '边（edge）'
+            name '连接两个节点的线段，即节点引用（指针）'
+        end
+        entry do
+            command '节点所在层（level）'
+            name '从顶至底递增，根节点所在层为 1'
+        end
+        entry do
+            command '节点的度（degree）'
+            name '节点的子节点的数量，在二叉树中，度的取值范围时0、1、2'
+        end
+        entry do
+            command '二叉树的高度（height）'
+            name '从根节点到最远叶节点所经过的边的数量'
+        end
+        entry do
+            command '节点的深度（depth）'
+            name '从根节点到该节点所经过的边的数量'
+        end
+        entry do
+            command '节点的高度（height）'
+            name '从距离该节点最远的叶节点到该节点所经过的边的数量'
+        end
+        entry do
+            command '完美二叉树'
+            name '所有层的节点都被完全填满，叶节点的度为0，其余所有节点的度都为2'
+        end
+        entry do
+            command '完全二叉树'
+            name '仅允许最底层的节点不完全填满，且最底层的节点必须从左至右依次连续填充'
+        end
+        entry do
+            command '完满二叉树'
+            name '除了叶节点之外，其余所有节点都有两个字节点，所有节点的度都为0或2'
+        end
+        entry do
+            command '平衡二叉树'
+            name '任意节点的左子树和右子树的高度之差的绝对值不超过1'
+        end
+        entry do
+            command '链表'
+            name '当所有节点都偏向一侧时，二叉树退化为"链表"'
+        end
+    end
+
+    category do
+        id '树遍历'
+
+        entry do
+            command '层序遍历'
+            name 'level-order traversal，从顶部到底部逐层遍历二叉树，并在每一层按照从左到右的顺序访问节点'
+        end
+        entry do
+            command '广度优先遍历' 
+            name 'breadth-first traversal，也被称为广度优先搜索（breadth-first search, BFS），与层序遍历相同'
+        end
+        entry do
+            command '深度优先遍历'
+            name 'depth-first traversal，也被称为深度优先搜索（depth-first search, DFS），绕着整颗二叉树的外围走一圈'
         end
     end
 end
