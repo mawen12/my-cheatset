@@ -62,10 +62,10 @@ cheatsheet do
     end
 
     category do
-        id ''
+        id 'jad'
 
         entry do
-            
+            command 'jad <全限定类名>'
         end
     end
 end
