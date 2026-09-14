@@ -84,5 +84,20 @@ cheatsheet do
                 - Ctrl+o 切换到临时普通模式执行
             END
         end
+        entry do
+            name '行'
+            notes <<-'END'
+                普通模式：
+
+                - 0: 绝对行首
+                - Shift+6: 非空字符行首
+                - Shift+4: 行尾 
+
+
+                插入模式：
+
+                - Ctrl+o 切换到临时普通模式执行
+            END
+        end
     end
 end

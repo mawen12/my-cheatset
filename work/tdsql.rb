@@ -377,23 +377,105 @@ cheatsheet do
         id '序列'
 
         entry do
+            name '注意点'
+            notes <<-'END'
+                重复序列问题：
+
+                - 当设置的cache(TDSQL_CACHE) > 1，处于较高并发时会返回重复值。
+                - 设置了循环（TDSQL_CYCLE），到达最大值后，循环到0后有概率返回重复值。
+
+                更新序列值：
+
+                - tdsql_setval 只能设置比当前序列值更大的值，如果比当前值小，则不起效
+                - tdsql_resetval 可以解决无法设置为更小值的问题
+            END
+        end
+        entry do
             name '查看序列'
             notes <<-'END'
                 -- 查看全部序列
                 /*proxy*/ show tdsql_sequences;
 
                 -- 查看单个序列
-                /*proxy*/ show create tdsql_sequence 库名.序列名;
+                show create tdsql_sequence 库名.序列名;
 
                 -- 系统表查询序列详情
                 SELECT * FROM mysql.tdsql_sequences WHERE db = 库名;
 
                 -- 获取下一个序列号
                 SELECT tdsql_nextval(库名.序列名);
+                SELECT next value for 库名.序列名;
 
                 -- 获取当前已生成的序列号
                 SELECT tdsql_lastval(库名.序列名);
+                SELECT tdsql_previous value for 库名.序列名;
             END
+        end
+        entry do
+            name '创建序列'
+            notes <<-'END'
+                CREATE TDSQL_SEQUENCE 库名.序列名 
+                    START WITH 1 
+                    TDSQL_MINVALUE 1 
+                    TDSQL_MAXVALUE 999999 
+                    TDSQL_INCREMENT BY 1 
+                    TDSQL_CYCLE;
+            END
+        end
+        entry do
+            name '删除序列'
+            notes <<-'END'
+                DROP TDSQL_SEQUENCE IF EXISTS 库名.序列名;
+            END
+        end
+        entry do
+            name '更新序列定义'
+            notes <<-'END'
+                ```
+                ALTER TDSQL_SEQUENCE 库名.序列名 TDSQL_MAXVALUE 999999999999999999;
+                ```
+            END
+        end
+        entry do
+            name '更新序列值'
+            notes <<-'END'
+                ```
+                -- 该方法仅对于目标值大于当前序列值起效，否则不起效
+                SELECT tdsql_setval(库名.序列名, 目标值, true/false 是否跳过设置的值)
+
+                -- 强制设置目标值
+                SELECT tdsql_resetval(库名.序列名, 目标值);
+                ```
+            END
+        end
+    end
+
+    category do
+        id '分区'
+
+        entry do
+            name '添加分区'
+            notes <<-'END'
+                ```sql
+                ALTER TABLE <table_name> ADD SUBPARTITION TEMPLATE (SUBPARTITION <subpartition_name> VALUES LESS THAN (<data>) );
+                ```
+            END
+        end
+        entry do
+            name '删除分区'
+            notes <<-'END'
+                ```sql
+                ALTER TABLE <table_name> DROP SUBPARTITION TEMPLATE <subpartition_name>;
+                ```
+            END
+        end
+    end
+
+    category do
+        id '统计信息'
+
+        entry do
+            name ''
         end
     end
 end

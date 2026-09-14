@@ -491,5 +491,34 @@ cheatsheet do
                 ```
             END
         end
+        entry do
+            name '银联商户号映射'
+            notes <<-'END'
+                ```markdown
+                | CAPITAL_CHANNEL_CODE | paramType |
+                | --- | --- |
+                | 32000000040004 | 82 |
+                | 32000000040005 | 83 |
+                | 32000000040015 | 84 |
+                | 31000000040001 | 61 |
+                | 31000000040011 | 48 |
+                | 31000000040017 | 62 |
+                | 32000080711002 | 94 |
+                | 32000000040100 | 89 |
+                | 32000000040001 | 92 |
+                | 32000000040016 | A1 |
+                | 31000000040002 | 60 |
+                | 33000000080080 | 30 |
+                ```
+            END
+        end
+        entry do
+            name '商户号映射'
+            notes <<-'END'
+                ```sql
+                SELECT * FROM PUB_MERCHANT_PARAM WHERE mer_id = <BUSIESS_ID> AND param_type = ?
+                ```
+            END
+        end 
     end
 end
