@@ -457,7 +457,15 @@ cheatsheet do
             name '添加分区'
             notes <<-'END'
                 ```sql
+                # 单分区
                 ALTER TABLE <table_name> ADD SUBPARTITION TEMPLATE (SUBPARTITION <subpartition_name> VALUES LESS THAN (<data>) );
+
+                # 多分区
+                ALTER TABLE <table_name> ADD SUBPARTITION TEMPLATE (
+                    SUBPARTITION <subpartition_name1> VALUES LESS THAN (<data1>),
+                    SUBPARTITION <subpartition_name2> VALUES LESS THAN (<data2>),
+                    SUBPARTITION <subpartition_namen> VALUES LESS THAN (<datan>),
+                );
                 ```
             END
         end

@@ -167,5 +167,15 @@ cheatsheet do
             command 'grpe -E \'keyword1|keyword2|keywordn\' <file>'
             name '在指定文件中查找多个匹配的关键词'
         end
+        entry do
+            comand 'find [path...] expression'
+            name '在文件系统中递归搜索文件和目录，支持按文件名、权限、所有者、修改时间、文件大小等属性搜索'
+            notes <<-'END'
+                # 查找大于 100MB 的文件
+                # -type f: 查询类型为file，d代表directory
+                # -size +100M: 查询大小为100MB以上，-代表以下，无前缀代表精确，C是Byte，K是KB，M代表MB，G代表GB
+                find /home/epps -type f -size +100M
+            END
+        end
     end
 end

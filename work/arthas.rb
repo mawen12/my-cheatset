@@ -66,6 +66,59 @@ cheatsheet do
 
         entry do
             command 'jad <全限定类名>'
+            name '反编译类'
+        end
+    end
+
+    category do
+        id 'retransform'
+
+        entry do
+            command 'retransform /tmp/Xxx.class'
+            name '加载外部的 .class 文件'
+            notes <<-'END'
+                需要注意的是，对于 spring bean 的 class 修改字段值后，不会起效。
+                只有方法才会起效。
+            END
+        end
+    end
+
+    category do
+        id 'ognl'
+
+        entry do
+            command 'ognl -c <classLoader hashcode> @<className>@<field>'
+            name '查看类的静态字段值'
+            notes <<-'END'
+                # 获取类加载器及其hashCode
+                classloader -t
+                # 获取该类的字段信息
+                ognl -c <classLoader hashcode> @com.jsbank.util.Http2Util@connectionTimeout
+            END
+        end
+    end
+
+    category do
+        id 'vmtool'
+
+        entry do
+            command 'vmtool --action getInstances --className <className> --express \'instances[0]\''
+            name '获取类实例的字段信息'
+            notes <<-'END'
+                # 获取该实例的所有字段和方法信息
+                vmtool --action getInstances --className com.jsbank.service.channel.T988546Service --express 'instances[0]'
+                # 获取该实例的指定字段信息
+                vmtool --action getInstances --className com.jsbank.service.channel.T988546Service --express 'instances[0].url'
+            END
+        end
+    end
+
+    category do
+        id 'mc'
+
+        entry do
+            command 'mc /tmp/Test.java'
+            name '编译 .java 文件生成 .class'
         end
     end
 end
