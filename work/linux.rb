@@ -175,7 +175,20 @@ cheatsheet do
                 # -type f: 查询类型为file，d代表directory
                 # -size +100M: 查询大小为100MB以上，-代表以下，无前缀代表精确，C是Byte，K是KB，M代表MB，G代表GB
                 find /home/epps -type f -size +100M
+
+                # 查找文件名
+                find /home/epps -type f -name abc*
             END
+        end
+    end
+
+    category do
+        id 'zip'
+
+        entry do
+            command 'zip -s <大小> <生成的文件压缩包> <待压缩的目录>'
+            name '分卷压缩'
+            notes 'zip -s 50M data.zip /data/*'
         end
     end
 end

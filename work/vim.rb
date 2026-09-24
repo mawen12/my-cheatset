@@ -4,6 +4,15 @@ cheatsheet do
     keyword ''
 
     category do
+        id '组合技'
+
+        entry do
+            name '复制当前行，并粘贴到下一行'
+            notes 'yyp'
+        end
+    end
+
+    category do
         id '连贯'
 
         entry do
@@ -92,6 +101,32 @@ cheatsheet do
                 - 0: 绝对行首
                 - Shift+6: 非空字符行首
                 - Shift+4: 行尾 
+
+
+                插入模式：
+
+                - Ctrl+o 切换到临时普通模式执行
+            END
+        end
+        entry do
+            name '复制当前行'
+            notes <<-'END'
+                普通模式：
+
+                - yy: 复制当前行
+
+
+                插入模式：
+
+                - Ctrl+o 切换到临时普通模式执行
+            END
+        end
+        entry do
+            name '粘贴到当前行的下一行'
+            notes <<-'END'
+                普通模式：
+
+                - p: 粘贴到当前行的下一行
 
 
                 插入模式：

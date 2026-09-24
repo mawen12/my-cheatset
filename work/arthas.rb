@@ -121,4 +121,24 @@ cheatsheet do
             name '编译 .java 文件生成 .class'
         end
     end
+
+    category do
+        id '组合技'
+
+        entry do
+            name '编辑及替换'
+            notes <<-'END'
+                # 反编译
+                jad --source-only <全限定类名> > /tmp/Demo.java
+                # 修改源码方法
+                vim /tmp/Dmeo.java
+                # 编译 class
+                sc -d <全限定类名> | grep classLoaderHash
+                mc -c <classLoaderHash> /tmp/Demo.java -d /tmp/classes
+                # 热更新装载
+                retransform /tmp/classes/Demo.class
+                retransform -l
+            END
+        end
+    end
 end
