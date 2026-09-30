@@ -1309,5 +1309,356 @@ public class MyConfiguration {
 
 ### 配置单个负载均衡器
 
+可以为每个负载均衡器客户端单独配置不同的前缀，例如 `spring.cloud.loadbalancer.clients.<clientId>.*`，其中 `clientId` 是负载均衡器的名称。默认配置值可以在 `spring.cloud.loadbalancer.*` 命名空间中设置，这些值将于客户端特定的配置值合并，客户端特定的配置值优先。
+
+application.yml
+```
+spring:
+	cloud:
+		loadbalancer:
+			health-check:
+				initial-delay: 1s
+			clients:
+				myclient:
+					health-check:
+						interval: 30s
+```
+
+上述示例将生成一个合并的健康检查 `@ConfigurationProperties` 对象，其 `initial-delay=1s`， `interval=30s`。
+
+除了以下全局属性外，每个客户端的配置属性对大多数属性有效：
+- `spring.cloud.loadbalancer.enabled` - 全局启用或禁用负载均衡
+- `spring.cloud.loadbalancer.retry.enabled` - 全局启用或禁用负载均衡器重试。如果全局启用，你仍然可以使用以 `client-`为 前缀的属性为特定客户端禁用重试，但反之则不行
+- `spring.cloud.loadbalancer.cache.enabled` - 全局启用或禁用负载均衡器缓存。如果全局启用，你仍然可以通过创建自定义配置来禁用特定客户端的缓存，该自定义配置不应在 `ServiceInstanceListSupplier` 委托层次结构中包含 `CachingServiceInstanceListSupplier`，但反之则不行
+- `spring.cloud.loadbalancer.stats.micrometer.enabled` - 全局启用或禁用负载均衡器 Micrometer 指标
+
+> 对于已使用映射的属性，如果无需使用 `clients` 关键字即可为每个客户端指定不同的值（例如，`hints`、`health-check.path`），我们保留了这种行为，以保持库的向后兼容性。这将在下一个主要版本中进行修改。
+
+> 从 `4.1.0` 版本开始，我们在 `LoadBalancerProperties` 中引入了 `callGetWithRequestOnDelegates` 标志。如果此标志设置为 `true`，则会实现 `ServiceInstanceListSupplier#get(Request request)` 方法，以便在可从 `DelegatingServiceInstanceListSupplier` 分配的类（不包括 `CachingServiceInstanceListSupplier` 和 `HealthCheckServiceInstanceListSupplier`）调用 `delegate.get(request)` 方法。该参数应置于实例供应商层级结构中，紧随通过网络执行实例检索的供应商之后，且在执行任何基于请求的过滤之前。默认值为 `true`。
+
+
+### AOT 和原生镜像支持
+
+从 `4.0.0` 版本开始，Spring Cloud LoadBalancer 支持 Spring AOT 转换和原生镜像。但是，要使用此功能，你需要显式定义 `LoadBalancerClient` 服务 ID。你可以通过使用 `@LoadBalancerClient` 注解的 `value` 或 `name` 属性，或者通过 `spring.cloud.loadbalancer.eager-load.clients` 属性的值来实现。
+
+
+### Spring HTTP 服务客户端自动配置的负载均衡器集成
+
+从 `5.0.0` 版本起，Spring Cloud LoadBalancer 通过 `LoadBalancerRestClientHttpServiceGroupConfigurer` 和 `LoadBalancerWebClientHttpServiceGroupConfigurer` 支持 Spring HTTP 服务客户端自动配置。
+
+对于每个 HTTP 服务客户端组，如果组 `baseUrl`（在 `spring.http.serviceclient.[groupName].base-url` 属性下定义）为空，则会设置一个基于 `serviceId` 的 URL 来进行负载均衡，该 URL 的 `baseUrl` 由 HTTP 服务客户端  `groupName` 解析而来。
+
+如果组 `baseUrl` 为空或其 `scheme` 设置为 `lb`，则会从应用上下文选取 `DeferringLoadBalancerInterceptor` 实例用于阻塞场景，选取 `DeferringLoadBalancerExchangeFilterFunction` 实例用于反应式场景，并将其自动添加到组的 `RestClient.Builder` 或 `WebClient.Builder`（如果可用），从而实现请求的负载均衡。
+
+例如，在具有一下 HTTP 服务客户端配置的应用中：
+```
+@SpringBootApplication
+@ImportHttpServices(group = "verificationClient", types = {VerificationService.class, PersonService.class})
+public class HttpVerificationClientApplication {
+	public static void main(String[] args) {
+		SpringApplication.run(HttpVerificationClientApplication.class, args);
+	}
+}
+```
+
+如果未设置 `spring.http.serviceclient.verificationClient.base-url` 属性，则会自动将其设置为 `verificationClient`。初始状态下使用默认协议（http）；但是，如果通过负载均衡选择了安全的 ServiceInstance，则会将其更改为 `https`。
+
+如果将 `spring.http.serviceclient.verificationClient.base-url` 属性设置为具有 `lb` 协议的 URL（例如，`lb://verificationClient/path`），则会使用默认协议 `http`。如果通过负载均衡选择了一个安全的 `ServiceInstance`，则协议将改为 `https`.在这两种情况下，都会向组的客户端构建器添加 `DeferringLoadBalancerInterceptor` 或 `DeferringLoadBalancerExchangeFilterFunction` 从而实现请求的负载均衡。
+
+如果 `spring.http.serviceclient.verficationClient.base-url` 属性设置为未将 `scheme` 设置为 `lb`  的 URL（例如 `verification/path`），则不会应用负载均衡器集成。
+
+
+## CachedRandomPropertySource
+
+Spring Cloud Context 提供了一个 `PropertySource`，它可以根据键缓存随机值。除了缓存功能之外，它的工作方式与 Spring Boot 的 `RandomValuePropertySource` 相同。如果你希望即使在 Spring 应用上下文重启后，随机值仍然保持一致，那么这个随机值就非常有用。属性值采用 `cacherandom.[yourkey].[type]` 格式，其中 `yourkey` 是缓存中的键，`type` 值可以是 Spring Boot `RandomValuePropertySource` 支持的任何类型。
+
+```
+myrandom=${cacherandom.appname.value}
+```
+
+
+## 安全
+
+### 单点登录
+
+> 所有 OAuth2 SSO 和资源服务器功能已在 Spring Boot 1.3 版本中迁移。你可以在 Spring Boot 用户指南中找到相关文档。
+
+#### 客户端 Token 中继
+
+如果你的应用是面向用户的 OAuth2 客户端（即声明了 `@EnableOAuth2Sso` 或 `@EnableOAuth2Client`），那么它会在 Spring Boot 的请求作用域中拥有一个 `OAuth2ClientContext`。你可以基于此上下文和自动注入的`OAuth2ProtectedResourceDetails` 创建自定义的 `OAuth2RestTemplate`，这样上下文就会始终将 `access token` 向下转发，并在 `access token` 过期时自动刷新。（这些是 Spring Security 和 Spring Boot 的特性。）
+
+#### 字眼服务端 Token 中继
+
+如果你的应用使用了 `@EnableResourceServer` 注解，你可能需要将传入的令牌传递给下游的其他服务。如果你使用 `RestTemplate` 来连接下游服务，那么这只是如何创建具有正确上下文的模板的问题。
+
+如果你的服务使用 `UserInfoTokenServices` 来验证传入的令牌（即，它使用了 `security.oauth2.user-info-uri` 配置），那么你可以直接使用自动注入的 `OAuth2ClientContext` 创建一个 `OAuth2RestTemplate`（它会在身份验证过程到达后端之前被填充）。同样地（在 Spring Boot 1.4 中），你可以注入一个 `UserInfoRestTemplateFactory`，并在你的配置中获取它的 `OAuth2RestTemplate`。例如：
+
+MyConfiguration.java
+```
+@Bean
+public OAuth2RestTemplate restTemplate(UserInfoRestTemplateFactory factory) {
+	return factory.getUserInfoRestTemplate();
+}
+```
+
+此 `restTemplate` 将具有身份验证过滤器使用的相同 `OAuth2ClientContext`（请求范围），因此你可以使用它来发送带有相同访问令牌的请求。
+
+如果你的应用未使用 `@UserInfoTokenServices`，但仍然是客户端（即声明了 `@EnableOAuth2Client` 或 `@EnableOAuth2Sso`），那么在 Spring Security Cloud 中，用户通过 `@Autowired OAuth2Context` 创建的任何 `OAuth2RestOperations` 都会转发令牌。此功能默认以 MVC 处理程序拦截器的形式实现。如果你未使用 MVC，则可以使用自定义过滤器或 AOP 拦截器包装的 `AccessTokenContextRelay` 来实现相同的功能。
+
+以下是一个基本示例，展示了如何使用在其他地方创建的自动装配 `restTemplate`（"foo.com" 是一个资源服务器，接受与周围应用程序相同的令牌）：
+
+MyController.java
+```
+@Autowired
+private OAuth2RestOperations restTemplate;
+
+@RequestMapping("/relay")
+public String relay() {
+ 	ResponseEntity<String> response = restTemplate.getForEntity("https://foo.com/bar", String.class);
+ 	return "Success!（" + response.getBody() + “)";
+}
+```
+
+如果你不想转发令牌（这是一个合理的选择，因为你可能希望以自己的身份而不是发送令牌的客户端的身份行事），那么你只需要创建自己的 `OAuth2Context`，而不是自动装配默认的 `OAuth2Context`。
+
+如果 `OAuth2ClientContext` 可用，Feign 客户端还会获取使用该 `OAuth2ClientContext` 的拦截器，因此它们也应该在 `RestTemplate` 可以执行令牌中继的任何地方执行。
+
+
+## Spring Cloud Circuit Breaker
+
+Spring Cloud Circuit Breaker 为不同的熔断器提供了一种抽象层。它提供了一套一致的 API，供您在应用程序中使用，使开发人员能够选择最适合你应用程序需求的熔断器实现。
+
+### 支持的实现
+
+Spring Cloud 支持以下熔断器实现：
+- Resilience4J
+- Sentinel
+- Spring Retry
+
+### 核心概念
+
+要在代码中创建熔断器，可以使用 `CircuitBreakerFactory` API。当你在类路径中包含 Spring Cloud Circuit Breaker starter 时，会自动地为你创建一个实现此 API 的 bean。以下示例展示了如何使用此 API：
+```
+@Service
+public static class DemoControllerService {
+	private RestTemplate rest;
+	private CircuitBreakerFactory cbFactory;
+	
+	public DemoControllerService(RestTemplate rest, CircuitBreakerFactory cbFactory) {
+		this.rest = rest;
+		this.cbFactory = cbFactory;
+	}
+	
+	public String slow() {
+		return cbFactory.create("slow").run(() -> rest.getForObject("/slow", String.class), throwable -> "fallback");
+	}
+}
+```
+
+`CircuitBreakerFactory.create` API 会创建一个名为 `CircuitBreaker` 的类的实例。`run` 方法接受一个 `Supplier` 和一个 `Function` 参数。`Supplier` 是你要封装在断路器中的代码。`Function` 是断路器跳闸时运行的备用代码。该函数会接受触发备用代码的 `Throwable` 异常。如果你不想提供备用代码，可以选择将其排除在外。
+
+#### 响应时代码中断路器
+
+如果 Project Reactor 已经添加到类路径中，你也可以在响应式代码中使用 `ReactiveCircuitBreakerFactory`。以下示例展示了如何操作：
+```
+@Service
+public static class DemoControllerService {
+	private WebClient webClient;
+	private ReactiveCircuitBreakerFactory cbFactory;
+	
+	public DemoControllerService(WebClient webClient, ReactiveCircuitBreakerFactory cbFactory) {
+		this.webClient = webClient;
+		this.cbFactory = cbFactory;
+	}
+	
+	public Mono<String> slow() {
+		return webClient.get().uri("/slow").retrieve().bodyToMono(String.class).transform(
+			it -> cbFactory.create("slow").run(it, throwable -> return Mono.just("fallback")));
+	}
+}
+```
+
+`ReactiveCircuitBreakerFactory.create` API 会创建一个名为 `ReactiveCircuitBreaker` 的实例。`run` 方法接受一个 `Mono` 或 `Flux` 对象，并将其封装在一个断路器中。你可以选择性地配置一个回退 `Function`，该函数会在断路器跳闸时被调用，接受触发备用代码的 `Throwable` 异常。
+
+
+### 配置
+
+你可以通过创建 `Customizer` 类型的 bean 来配置断路器。`Customizer` 接口只有一个方法（名为 `customize`），该方法接受一个要自定义的对象。
+
+有关如何自定义特定实现的详细信息，请参阅一下文档：
+- Resilience4J
+- Sentinel
+- Spring Retry
+
+某些断路器实现（例如 `Resilience4JCircuitBreaker`）会在每次调用 `CircuitBreaker#run` 时都调用 `customize` 方法，这可能导致效率低下。在这种情况下，你可以使用 `CircuitBreaker#once` 方法，当多次调用 `customize` 方法没有意义时，例如在消费 `Resilience4J` 事件时，`CircuitBreaker#once` 方法非常有用。
+
+以下示例展示了每个 `io.github.resilience4j.circuitbreaker.CircuitBreaker` 如何使用事件：
+
+```java
+Customizer.once(circuitBreaker -> { 
+	circuitBreaker.getEventPublisher()
+		.onStateTransition(event -> log.info("{}: {}", event.getCircuitBreakerName(), event.getStateTransition()));
+}, CircuitBreaker::getName)
+```
+
+
+### Spring HTTP 服务客户端支持
+
+Spring Cloud 提供以下配置器提供对 Spring HTTP 服务客户端集成的支持：
+- `CircuitBreakerRestClientHttpServiceGroupConfigurer`
+- `CircuitBreakerWebClientHttpServiceGroupConfigurer`
+
+这些配置器为 Spring HTTP 服务客户端组启用了断路器支持。
+
+当使用 `@HttpServiceFallbackAnnotation` 配置回退类时，会添加断路器适配器装饰器：`CircuitBreakerAdapterDecorator` 用于 `RestClient`，`ReactiveCircuitBreakerAdapterDecorator` 用于 `WebClient`。
+
+> 你可以通过设置响应的属性来禁用 HTTP 服务客户端的 CircuitBreaker 集成：
+> - 对于阻塞式（`RestClient`）客户端：`spring.cloud.circuitbreaker.http-services.enabled=false`
+> - 对于反应式（`WebClient`）客户端：`spring.cloud.circuitbreaker.reactive-http-services.enabled=false`
+> 这样可以防止 CircuitBreaker 装饰器应用于基于接口的 HTTP 客户端组
+
+#### 使用注解声明回退方案
+
+使用配置类上的 `@HttpServiceFallback` 注解来配置回退方案。此注解允许你声明：
+- 回退实现类（通过 `value`）
+- 回退机制支持的服务接口（通过 `forService`，可选）
+- 回退方案适用的组（通过 `forGroup`，可选）
+
+使用 Java 的 `@Repeatable` 注解机制，可以在同一个类上声明多个 `@HttpServiceFallback` 注解。如果没有指定组，则回退机制将应用于所有没有针对给定服务接口显示设置组级回退机制的组。
+
+回退类按以下优先级解析：
+- 一个回退类，同时满足 `forService` 和 `forGroup` 属性
+- 一个回退类，满足 `forService`，不满足 `forGroup`（服务的全局设置）
+- 一个回退类，不满足 `forService` 和 不满足 `forGroup` 属性（组内所有服务或全局服务的默认值）
+
+示例：
+```java
+@HttpServiceFallback(value = DefaultFallback.class)
+@HttpServiceFallback(value = GroupAndServiceSepcificFallbacks.class, service = {BillingService.class, ShippingService.class}, group = "billing")
+public class MyFallbackConfig {
+	...
+}
+```
+
+此配置会导致：
+- `DefaultFallbacks` 用作所有未显式处理的服务的全局回退方案
+- `GroupAndServiceSepcificFallbacks` 仅用于 `billing` 组内的 `BillingService` 和 `ShippingService`。
+
+> - 回退类和方法必须是 `public`
+> -  回退类的方法不能使用 `@HttpExchange` 注解
+
+
+
+#### CircuitBreaker 断路器的工作原理
+
+适配器使用断路器逻辑包装 `@HttpExchange` 方法调用。当触发回退时，会使用用户定义的回退类创建一个代理。通过匹配以下条件来选择合适的回退方法：
+- 具有相同名称和参数类型的方法，或
+- 具有相同名称和参数类型，签名加上了 `Throwable` 参数（用于访问失败原因）
+
+给定以下接口：
+```
+@HttpExchanges("/test")
+public interface TestService {
+	@GetExchange("/{id}")
+	Person get(@PathVariable UUID id);
+	
+	@GetExchange()
+	String test();
+}
+```
+
+一个匹配的备用类可以是：
+```
+public class TestServiceFallback {
+	public Person get();
+	
+	public String test(Throwable cause);
+}
+```
+
+
+## 通用应用属性
+
+你可以在 `application.properties` 文件、`application.yml` 文件或命令行参数中指定各种属性。本附录提供了常用 Spring Cloud Commons 属性列表以及使用这些属性的底层类的引用。
+
+> 属性可以来自类路径上的其他 jar 文件，因此你不应将此列表视为完整列表。此外，你可以定义自己的属性。
+
+### 可观测性元数据
+
+#### 可观测性 - 指标
+
+下面列出了该项目声明的所有指标。
+
+##### 断路器 Function 观察
+
+> 当我们将传递给断路器的 Function 作为备用方案进行包装时，会创建此观察结果。
+
+指标名称 `spring.cloud.circuitbreaker`（由约定类 `org.springframework.cloud.client.circuitbreaker.observation.DefaultCircuitBreakerObservationConvention`）。类型：`timer`。
+指标名称 `spring.cloud.circuitbreaker.name`（由约定类 `org.springframework.cloud.client.circuitbreaker.observation.DefaultCircuitBreakerObservationConvention`）。类型：`long task timer`。
+
+> 在开始观察后添加的键值可能在 `*.active` 指标中缺失。
+
+> Micrometer 内部使用 `nanoseconds` 作为基本单位。但是，每个后端程序都会确定实际的基本单位。（例如，Prometheus 使用秒）
+
+封闭的完全限定名称 `org.springframework.cloud.client.circuitbreaker.observation.CircuitBreakerObservationDocumentation`。
+> 所有标签都必须以 `spring.cloud.circuitbreaker` 为前缀！
+
+低基数键：
+
+| 名称 | 描述 |
+| --- | --- |
+| `spring.cloud.circuitbreaker.type`（必须） | 定义包装的 Lambda 类型 |
+
+##### 断路器 Supplier 观察
+
+> 当我们将 Supplier 传递给断路器时，会创建观察结果。
+
+指标名称 `spring.cloud.circuitbreaker`（由约定类 `org.springframework.cloud.client.circuitbreaker.observation.DefaultCircuitBreakerObservationConvention`）。类型：`timer`。
+指标名称 `spring.cloud.circuitbreaker.name`（由约定类 `org.springframework.cloud.client.circuitbreaker.observation.DefaultCircuitBreakerObservationConvention`）。类型：`long task timer`。
+
+> 在开始观察后添加的键值可能在 `*.active` 指标中缺失。
+
+> Micrometer 内部使用 `nanoseconds` 作为基本单位。但是，每个后端程序都会确定实际的基本单位。（例如，Prometheus 使用秒）
+
+封闭的完全限定名称 `org.springframework.cloud.client.circuitbreaker.observation.CircuitBreakerObservationDocumentation`。
+> 所有标签都必须以 `spring.cloud.circuitbreaker` 为前缀！
+
+低基数键：
+
+| 名称 | 描述 |
+| --- | --- |
+| `spring.cloud.circuitbreaker.type`（必须） | 定义包装的 Lambda 类型 |
+
+#### 可观测性 - 跨度
+
+下面列出了本项目声明的所有 span。
+
+##### 断路器 Function 观察 span
+
+> 当我们将传递给断路器的 Function 作为备用方案进行包装时，会创建此观察结果。
+
+Span 名称 `spring.cloud.circuitbreaker`（由约定类 `org.springframework.cloud.client.circuitbreaker.observation.DefaultCircuitBreakerObservationConvention`）。
+
+封闭的完全限定名称 `org.springframework.cloud.client.circuitbreaker.observation.CircuitBreakerObservationDocumentation`。
+> 所有标签都必须以 `spring.cloud.circuitbreaker` 为前缀！
+
+标签键
+| 名称 | 描述 |
+| --- | --- |
+| `spring.cloud.circuitbreaker.type`（必须） | 定义包装的 Lambda 类型 |
+
+##### 断路器 Supplier 观察 span
+
+> 当我们将 Supplier 传递给断路器时，会创建观察结果。
+
+Span 名称 `spring.cloud.circuitbreaker`（由约定类 `org.springframework.cloud.client.circuitbreaker.observation.DefaultCircuitBreakerObservationConvention`）。
+
+封闭的完全限定名称 `org.springframework.cloud.client.circuitbreaker.observation.CircuitBreakerObservationDocumentation`。
+> 所有标签都必须以 `spring.cloud.circuitbreaker` 为前缀！
+
+标签键
+| 名称 | 描述 |
+| --- | --- |
+| `spring.cloud.circuitbreaker.type`（必须） | 定义包装的 Lambda 类型 |
 
 
