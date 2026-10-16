@@ -2182,7 +2182,7 @@ spring:
 						- SetRequestHeader=X-Request-Red, Blue
 ```
 
-该过滤器会替换（而非添加）所有具有指定名称的标头。因此，// TODO 此处描述错误，仅修改请求头，而非响应头。如果下游服务器响应了 `X-Request-Red:1234`，它将被替换为 `X-Request-Red:Blue`，也就是下游服务将要收到的标头。
+该过滤器会替换（而非添加）所有具有指定名称的标头。因此，// TODO 此处描述错误，仅修改请求头，而非响应头。如果请求带有 `X-Request-Red:1234` 标头，它将被替换为 `X-Request-Red:Blue`，也就是下游服务将要收到的标头。
 
 `SetRequestHeader` 可以识别用于匹配路径或主机的 URI 变量。URI 变量可以用作值，并在运行时展开，以下示例配置了一个使用变量的 `SetRequestHeader` `GatewayFilter`：
 
@@ -3320,4 +3320,863 @@ spring:
 								- GET
 ```
 
-在前面的示例中，允许来自
+在前面的示例中，允许来自 `docs.spring.io` 的请求对所有 `GET`  请求路径进行 CORS 请求。
+
+要为未被某些网关路由 `Predicate` 处理的请求提供相同的 CORS 配置，请将 `spring.cloud.gateway.server.webflux.to-simple-url-handler-mapping` 设置为 `true`。当你尝试支持 CORS 预检请求，但路由 `Predicate` 由于 HTTP 方法为 `options` 而未评估为 `true` 时，此方法非常有用。
+
+
+
+### 路由 CORS 配置
+
+路由配置允许将 CORS 直接作为元数据应用于路由，键为 `cors`。与全局配置一样，这些属性属于 Spring Framework 的 `CorsConfiguration` 类。
+
+> 如果路由中不存在 `Path` `Predicate`，则应用 `/**`。
+
+*application.yml*
+
+```yaml
+spring:
+	cloud:
+		gateway:
+			server:
+				webflux:
+					routes:
+					- id: cors_route
+						uri: https://example.org
+						predicates:
+						- Path=/service/**
+						metadata:
+							cors:
+								allowedOrigins: '*'
+								allowedMethods:
+									- GET
+									- POST
+								allowedHeaders: '*'
+								maxAge: 30
+```
+
+
+
+## Actuator API
+
+`/gateway` 执行器端点允许你监控 Spring Cloud Gateway 应用程序并与之交互。默认情况下，`/gateway` 执行器端点的访问权限处于禁用状态。要启用该端点，你需要在应用属性中将其访问权限设置为 `read-only` 或 `unrestricted`，并通过 HTTP 或 JMX 将其公开。以下示例展示了如何操作：
+
+*application.properties*
+
+```properties
+management.endpoint.gateway.access=read-only
+management.endpoints.web.exposure.include=gateway
+```
+
+> 建议你将 `manaegment.endpoint.gateway.access` 设置为 `read-only`。这将禁用刷新、创建和删除路由的功能。如果你需要使用 Actuator 端点创建、刷新和删除路由，则需要将 `manaegment.endpoint.gateway.access` 设置为 `unrestricted` 或设置 `management.endpoint.gateway.enabled=true`。如果你启用了通过执行器端点创建、删除和刷新路由的功能，则应采取适当措施确保你的执行器端点安全。
+
+此端点概述了子执行器端点上可用功能以及每个引用的可用方法。返回的响应类似于以下内容：
+
+```json
+{
+  {
+  	"href": "/actuator/gateway/",
+  	"methods": { "GET" }
+	},
+	{
+  	"href": "/actuator/gateway/routeddefinitions",
+  	"methods": { "GET" }
+	},
+	{
+  	"href": "/actuator/gateway/globalfilters",
+  	"methods": { "GET" }
+	},
+	{
+  	"href": "/actuator/gateway/routefilters",
+  	"methods": { "GET" }
+	},
+	{
+  	"href": "/actuator/gateway/routes",
+  	"methods": { "GET", "POST" }
+	},
+	{
+  	"href": "/actuator/gateway/routepredicates",
+  	"methods": { "GET" }
+	},
+	{
+  	"href": "/actuator/gateway/refresh",
+  	"methods": { "POST" }
+	},
+	{
+  	"href": "/actuator/gateway/routes/route-id-1/combinedfilters",
+  	"methods": { "GET" }
+	},
+	{
+  	"href": "/actuator/gateway/routes/route-id-1",
+  	"methods": { "POST", "DELETE", "GET" }
+	},
+}
+```
+
+
+
+### 详细 Actuator 格式
+
+Spring Cloud Gateway 新增了一种更详细的路由配置格式。它为每个路由添加了更多细节，允许你查看与每个路由关联的 `Predicate` 和 `Filter`，以及任何可用的配置。以下示例配置了 `/actuator/gateway/routes`：
+
+```json
+[
+  {
+    "predicate": "(Hosts: [**.addrequestheader.org] && Paths: [/headers], match trailing slash: true)",
+    "route_id": "add_request_header_route",
+    "filters": [
+      "[[AddResponseHeader X-Response-Default-Foo = 'Default-Bar'], order = 1]",
+      "[[AddRequestHeader X-Request-Foo = 'Bar'], order = 1]",
+      "[[PrefixPath prefix = '/httpbin'], order = 2]"
+    ],
+    "uri": "lb://testservice",
+    "order": 0
+  }
+]
+```
+
+此功能默认启用，要禁用此功能，请设置以下属性：
+
+*application.properties*
+
+```properties
+spring.cloud.gateway.server.webflux.actuator.verbose.enabled=false
+```
+
+在未来的版本中，该设置将默认为 `true`。
+
+
+
+### 获取路由过滤器
+
+本节详细介绍如何检索路由过滤器，包括：
+
+- 全局过滤器
+- 路由过滤器
+
+#### 全局过滤器
+
+要检索应用于所有路由的全局过滤器，请向 `/actuator/gateway/globalfilters` 发送 `GET` 请求。返回的响应类似于以下内容：
+
+```json
+{
+  "org.springframework.cloud.gateway.filter.ReactiveLoadBalancerClientFilter@77856cc5": 10100,
+  "org.springframework.cloud.gateway.filter.RouteToRequestUrlFilter@4f6fd101": 10000,
+  "org.springframework.cloud.gateway.filter.NettyWriteResponseFilter@32d22650": -1,
+  "org.springframework.cloud.gateway.filter.ForwardRoutingFilter@106459d9": 2147483647,
+  "org.springframework.cloud.gateway.filter.NettyRoutingFilter@1fd5e0": 2147483647,
+  "org.springframework.cloud.gateway.filter.ForwardPathFilter@33a71d23": 0,
+  "org.springframework.cloud.gateway.filter.AdaptCachedBodyGlobalFilter@135064ea": 2147483637,
+  "org.springframework.cloud.gateway.filter.WebsocketRoutingFilter@23c05889": 2147483646
+}
+```
+
+响应中包含已应用全局过滤器的详细信息。对于每个全局过滤器，都包含过滤器对象的字符串表示（例如，`org.springframework.cloud.gateway.filter.ReactiveLoadBalancerClientFilter@77856cc5` ）以及过滤器链中的响应顺序。
+
+#### 路由过滤器
+
+要检索应用于路由的 `GatewayFilter` 工厂，请向 `/actuator/gateway/routefilters` 发送 `GET` 请求。返回的响应类型类似于以下内容：
+
+```json
+{
+  "[AddRequestHeaderGatewayFilterFactory@570ed9c, configClass = AbstractNameValueGatewayFilterFactory.NameValueConfig]": null,
+  "[SecureHeadersGatewayFilterFactory@fceab5d, configClass = Object]": null,v
+  "[SaveSessionGatewayFilterFactory@4449b273, configClass = Object]": null,
+}
+```
+
+响应包含应用于特定路由的 `GatewayFilter` 工厂的详细信息。每个工厂都有一个对应对象的字符串表示形式（例如，`[SecureHeadersGatewayFilterFactory@fceab5d, configClass = Object]` 。请注意，空值是由于端点控制器的实现不完整造成的，因为它尝试设置对象在过滤器链中的顺序，而这并不适用于 `GatewayFilter` 工厂对象。
+
+
+
+### 刷新路由缓存
+
+要清除路由缓存，请向 `/actuator/gateway/refresh` 发送 `POST` 请求。该请求将返回 200 状态码，但不包含响应文本。
+
+要清除具有特定元数据值的路由，请添加查询参数 `metadata`，指定要清除的路由应匹配的 `key:value`。如果在异步刷新期间发生错误，则刷新不会修改现有路由。
+
+向 `/actuator/gateway/refresh?metadata=group:group-1` 发送 `POST` 请求只会刷新 `group` 元数据的为 `group-1`：`first_route` 和 `third_group` 的路由。
+
+```json
+[{
+  "route_id": "first_route",
+  "route_object": {
+    "predicate": "..."
+  },
+  "metadata": { "group": "group-1" }
+},{
+  "route_id": "seconds_route",
+  "route_object": {
+    "predicate": "..."
+  },
+  "metadata": { "group": "group-2" }
+},
+ {
+  "route_id": "third_route",
+  "route_object": {
+    "predicate": "..."
+  },
+  "metadata": { "group": "group-1" }
+}]
+```
+
+
+
+### 检索网关中定义的路由
+
+要检索网关中定义的路由，请向 `/actuator/gateway/routes` 发送 `GET` 请求。返回的响应类似于以下内容（详细格式，这是默认格式）。
+
+```json
+[{
+  "predicate": "Paths: [/first], match trailing slash: true",
+  "route_id": "first_route",
+  "filters": [
+    "[[PreserveHostHeader], order = 0]"
+  ],
+ 	"uri": "https://www.uri-destination.org",
+	"order": 0
+},{
+  predicate: "Paths: [/second], match trailing slash: true",
+  "route_id": "seconds_route",
+  "filters": [],
+  "uri": "https://www.uri-destination.org",
+  "order": 0
+}]
+```
+
+> 当 `spring.cloud.gateway.server.webflux.actuator.verbose.enabled=false` 时，`Predicate` 和 `Filter` 将显示为原始 Java 类字符串，而不是人类可读的描述。
+
+响应中包含网关中定义的所有路由的详细信息。下表描述了响应中的每个元素（每个元素代表一条路由）的结构：
+
+| 路径        | 类型   | 描述                                              |
+| ----------- | ------ | ------------------------------------------------- |
+| `route_id`  | String | 路由  ID                                          |
+| `predicate` | String | 路由 `Predicate` 的人类可读字符串表示（详细格式） |
+| `filters`   | Array  | 应用于 `GatewayFilter` 工厂                       |
+| `uri`       | String | 路由的目标 `URI`                                  |
+| `order`     | Number | 路由顺序                                          |
+
+
+
+### 获取有关特定路由的信息
+
+要检索单个路由的信息，请向 `/actuator/gateway/routes/{id}` 发送 `GET` 请求（例如，`/actuator/gateway/routes/first_route` ）。返回的响应类似于以下内容：
+
+```json
+{
+  "route_id": "first_route",
+  "predicate": "Paths: [/first], match trailing slash: true",
+  "filters": [
+    "[[PreserveHostHeader], order = 0]"
+  ],
+ 	"uri": "https://www.uri-destination.org",
+	"order": 0
+}
+```
+
+`GET /actuator/gateway/routes/{id}` 的响应格式将 `Predicate` 表示为一个易于阅读的字符串。这与通过 `POST` 请求创建路由时所需的简写 DSL 字符串格式不同。有关正确的 `POST` 请求体格式，请参阅**创建和删除特定路由定义**。
+
+下表描述了响应的结构：
+
+| 路径        | 类型   | 描述                                              |
+| ----------- | ------ | ------------------------------------------------- |
+| `route_id`  | String | 路由  ID                                          |
+| `predicate` | String | 路由 `Predicate` 的人类可读字符串表示（详细格式） |
+| `filters`   | Array  | 应用于 `GatewayFilter` 工厂                       |
+| `uri`       | String | 路由的目标 `URI`                                  |
+| `order`     | Number | 路由顺序                                          |
+
+
+
+### 创建和删除特定路线定义
+
+> 只有通过执行器端点创建的路由才能通过这些端点进行修改或删除。在应用程序配置中定义的路由（例如，`application.yml` 或通过 `@Bean`）对于执行器而言是只读的。尝试删除配置中定义的路由将返回 `404 Not Found` 错误。
+
+要创建路由定义，请向 `/actuator/gateway/routes/{id_route_to_create}` 发送 `POST` 请求，请求体为 JSON 格式，并指定路由字段。`Predicate` 和 `Filter` 必须以简写 DSL 字符串的形式提供（例如，`Path-=/foo/**` 或 `StripPrefix=1`），这与 `GET /actuator/gateway/routes/{id}` 返回的结构化格式不同。以下示例展示了正确的请求格式：
+
+```json
+{
+	"predicates": [
+		"Path=/mypath/**",
+		"Weight=mygroup,20"
+	],
+	"filters": [
+		"StripPrefix=1"
+	],
+	"uri": "http://backend-service:8080",
+	"order": 0
+}
+```
+
+创建成功后返回 `201 Created`。创建路由后，调用 `POST /actuator/gateway/refresh` 即可应用更改，无需重启应用。
+
+> 请勿在未删除现有路由 ID 的情况下向其发送 `POST` 请求。这样做会造内部复制路由定义，导致后续的 `GET /actuator/gateway/routes` 请求返回 `500 Interval Server Error` 。要更新现有的 Actuator 管理理由，必须先将其删除，然后再重新创建。
+
+1. 发送 `DELETE` 到 `/actuator/gateway/routes/{id}`
+2. 发送 `POST` 带有更新的定义到 `/actuator/gateway/routes/{id}`
+3. 发送 `POST` 到 `/actuator/gateway/refresh`
+
+要删除路由定义，请向 `/actuator/gateway/routes/{id_route_to_delete}` 发送 `DELETE` 请求。删除成功后，将返回 `200 OK`。删除路由后，调用 `POST /actuator/gateway/refresh` 即可应用更改，无需重启应用。
+
+
+
+### 创建多个路由定义
+
+要在单个请求中创建多个路由定义，请向 `/actuator/gateway/routes` 发送 `POST` 请求，并在请求体中指定路由的字段，包括路由 ID（请参阅检索有关特定路由的信息）。
+
+如果在创建路由的过程中任何路由出现错误，则该路由定义将被丢弃。
+
+
+
+### 概要：所有端点列表
+
+下表总结了 Spring Cloud Gateway 执行器端点（请注意，每个端点的基本路径均为 `/actuator/gateway`）：
+
+| ID              | HTTP 方法 | 描述                                                         |
+| --------------- | --------- | ------------------------------------------------------------ |
+| `globalfilters` | GET       | 显示应用于路由的全局过滤器列表                               |
+| `routefilters`  | GET       | 显示应用于特定路由的 `GatewayFilter` 工厂列表                |
+| `refresh`       | POST      | 清除路由缓存                                                 |
+| `routes`        | GET       | 显示网关中定义的路由列表                                     |
+| `routes/{id}`   | GET       | 展示特定路由的相关信息                                       |
+| `routes/{id}`   | POST      | 向网关添加新路由。`Predicate` 和 `Filers` 使用简写 DSL 字符串格式。成功时返回 `201 Created` |
+| `routes/{id}`   | DELETE    | 从网关中移除现有路由。无法通过此端点移除应用配置中定义的路由（返回 `404 Not Found`） |
+
+
+
+## 在多个网关实例之间共享路由
+
+Spring Cloud Gateway 提供了两种n `RouteDefinititonRepository` 实现。第一种是 `InMemoryRouteDefintionRepository`，它仅存在于单个网关实例的内存中。这种类型的存储库不适合跨多个 `Gateway` 实例填充路由。
+
+为了在 Spring Cloud Gateway 实例集群中共享路由，可以使用 `RedisRouteDefinitionRepository`。要启用此类存储库，必须将以下属性设置为 `true`。`spring.cloud.gatway.redis-route-definiton-repository.enabled` 与 `RedisRateLimiter` 过滤器工厂类似，它需要使用 `spring-boot-starter-data-redis-reactive` Spring Boot 启动器。
+
+
+
+## 故障排除
+
+本节介绍使用 Spring Cloud Gateway 时可能出现的常见问题。
+
+
+
+### 日志级别  
+
+以下日志记录器可能包含 `DEBUG` 和 `TRACE` 级别的宝贵故障排除信息：
+
+- `org.springframework.cloud.gateway`
+- `org.springframework.http.server.reactive`
+- `org.springframework.web.reactive`
+- `org.springframework.boot.autoconfigure.web`
+- `reactor.netty`
+- `redisratelimiter`
+
+
+
+### 通信监听
+
+Reactor Netty 的 `HttpClient` 和 `HttpServer` 可以启用监听功能。当将 `reactor.netty` 的日志级别设置为 `DEBUG` 或 `TRACE` 时，即可记录通过网络发送和接收的信息，例如请求头和请求体。要启用监听功能，请分别设置 `HttpServer` 和 `HttpClient` 的 `spring.cloud.gateway.httpserver.wirtetap=true` 或 `spring.cloud.gateway.httpclient.wiretap=true`。
+
+
+
+## 开发者指南
+
+以下是编写网关一些自定义组件的基本指南。
+
+
+
+### 编写自定义路由 Predicate 工厂
+
+要编写路由 `Predicate`，你需要将 `RoutePredicateFactory` 实现为一个 bean。有一个名为 `AbstractRouterPredicateFactory` 的抽象类，你可以对其进行扩展。
+
+*MyRoutePredicateFactory.java*
+
+```java
+@Component
+public class MyRoutePredicateFactory extends AbstractRoutePredicateFactory<MyRoutePredicateFactory.Config> {
+  
+  public MyRoutePredicateFactory() {
+    super(Config.class);
+  }
+  
+  @Override
+  public Predicate<ServerWebExchange> apply(Config config) {
+    	// 从 Config 对象获取配置
+  	  return exchange -> {
+        // 获取请求
+        ServerHttpRequest request = exchange.getRequest();
+        // 从请求中获取信息，查看它是否与配置匹配
+        return matches(config, request);
+      }
+  }  
+  
+  public static class Config {
+    // 在此处配置处置过滤器的配置属性
+  }
+}
+```
+
+
+
+### 编写自定义 GatewayFilter 工厂
+
+要编写 `GatewayFilter`，你必须将 `GatewayFilterFactory` 实现为一个 bean。你可以扩展名为`AbstractGatewayFilterFactory` 的抽象类。以下示例展示了如何操作：
+
+*示例1：PreGatewayFilterFactory.java*
+
+```java
+@Component
+public class PreGatewayFilterFactory extends AbstractGatewayFilterFactory<PreGatewayFilterFactory.Config> {
+  public PreGatewayFilterFactory() {
+    super(Config.class);
+  }
+  
+  @Override
+  public GatewayFilter apply(Config config) {
+    // 从 Config 对象获取配置
+   	return (exchange, chain) -> {
+      // 如果你想要构建一个前置过滤器，你需要在调用 chain.filter 之前对请求进行操作
+      ServerHttpRequest.Builder builder = exchange.getRequest().mutate();
+      // 使用构建器来操作请求
+      return chain.filter(exchange.mutate().request(builder.build()).build());
+    } ;
+  }
+  
+  public static class Config {
+    // 在此处配置处置过滤器的配置属性
+  }
+}
+```
+
+*示例2： PostGatewayFilterFactory.java*
+
+```java
+@Component
+public class PostGatewayFilterFactory extends AbstractGatewayFilterFactory<PostGatewayFilterFactory.Config> {
+  public PostGatewayFilterFactory() {
+    super(Config.class);
+  }
+  
+  @Override
+  public GatewayFilter apply(Config config) {
+    // 从 Config 对象获取配置
+   	return (exchange, chain) -> {
+      return chain.filter(exchange).then(Mono.fromRunnable(() -> {
+        ServerHttpResponse response = exchange.getResponse();
+        // 以某种方式操作响应
+      }));
+    } ;
+  }
+  
+  public static class Config {
+    // 在此处配置处置过滤器的配置属性
+  }
+}
+```
+
+#### 在配置中命名自定义过滤器和引用
+
+自定义过滤器类名应以 `GatewayFilterFactory` 结尾。
+
+例如，要在配置文件中引用名为 `Something` 的过滤器，该过滤器必须位于名为 `SomethingGatewayFilterFactory` 的类中。
+
+> 可以创建一个不带 `GatewayFilterFactory` 后缀的网关过滤器，例如类名 `AnotherThing`。该过滤器可以在配置文件中被引用为 `AnotherThing`。这种命名约定不受支持，未来版本可能会移除此类语法。请更新过滤器名称以符合规范。
+
+
+
+### 编写自定义的全局过滤器
+
+要编写自定义全局过滤器，你必须将 `GlobalFilter` 接口实现为一个 bean。这样，过滤器就会应用于所有请求。
+
+以下示例分别展示了如何设置全局前置过滤器和后置过滤器：
+
+```java
+@Bean
+public GlobalFilter customGlobalFilter() {
+  return (exchange, chain) -> exchange.getPrincipal()
+    .map(Principal::getName)
+    .defaultIfEmtpy("Default User")
+    .map(username -> {
+      // 向代理请求添加标头
+      ServerHttpRequest.Builder builder = exchange.getRequest().mutate().header("CUSTOM-REQUEST-HEADER", userName);
+      // 使用构造器来操作请求
+      return exchange.mutate().request(builder.build()).build();
+    })
+    .flatMap(chain::filter);
+}
+
+@Bean
+public GlobalFilter customGlobalPostFilter() {
+  return (exchange, chain) -> exchange.filtr(exchange)
+    .then(Mono.just(exchange))
+    .map(serverWebExchange -> {
+      serverWebExchange.getResponse().getHeaders().set("CUSTOM-RESPONSE-HEADER", HttpStatus.OK.equals(serverWebExchange.getResponse().getStatusCode()) ? "It worked" : "It did not work");
+      return serverWebExchange;
+    })
+    .then();
+}
+```
+
+
+
+## AOT 和原生镜像支持
+
+自 `4.0.0` 版本起，Spring Cloud Gateway 支持 Spring AOT 转换和原生镜像。
+
+> 如果你使用负载均衡路由，则需要显式定义 `LoadBalancerClient` 服务 ID。你可以通过使用 `@LoadBalancerClient` 注解的 `value` 或 `name` 属性，或者通过 `spring.cloud.loadbalancer.eager-load.clients` 属性的值来实现。
+
+
+
+## 配置属性
+
+要查看所有与 Spring  Cloud Gateway 相关的配置属性列表，请参阅附录。
+
+
+
+# 使用 Spring Web MVC 或 WebFlux 的 Proxy Exchange Gateway
+
+> 以下介绍一种替代风格的网关。Spring Cloud Gateway Server 文档中的任何内容均不适用于以下内容。
+
+
+
+### 如何集成  Spring Cloud Gateway Proxy Exchange
+
+要将 Spring Cloud Gateway Proxy Exchange 集成到你的项目中，对于 `MVC`请使用 `org.springframework.cloud:spring-cloud-starter-gateway-poxyexchange-webmvc`。对于 `Webflux Proxy Exchange`，请使用  `org.springframework.cloud:spring-cloud-starter-gateway-poxyexchange-webflux`。
+
+有关如何使用当前的 Spring Cloud Release Train 设置构建系统的详细信息，请参阅 Spring Cloud 项目页面。
+
+
+
+### 使用 Proxy Exchange
+
+Spring Cloud Gateway 提供了一个名为 `ProxyExchange` 的实用对象。你可以将其作为方法参数在常规 Spring Web `handler` 程序中使用。它支持通过与 HTTP 动词对应的方法进行基本的下游 HTTP 交换。在 MVC 架构中，它还支持通过 `forward()` 方法将请求转发到本地处理程序。要使用 `ProxyExchange` ，请将正确的模块（`spring-cloud-gateway-proxyexchange-webmvc` 或 `spring-cloud-starter-gateway-poxyexchange-webflux`）添加到类路径中。
+
+以下 MVC 示例将对 `/test` 的请求代理到下游远程服务器：
+
+```java
+@RestController
+@SpringBootApplication
+public class GatewaySampleApplication {
+  @Value("${remote.home}")
+  private URI home;
+  
+  @GetMapping("/test")
+  public ResponseEntity<?> proxy(ProxyExchange<byte[]> proxy) throws Exception {
+    return proxy.uri(home.toString() + "/image/png").get();
+  }
+}
+```
+
+以下示例使用 Webflux 实现了相同的功能：
+
+```java
+@RestController
+@SpringBootApplication
+public class GatewaySampleApplication {
+  @Value("${remote.home}")
+  private URI home;
+  
+  @GetMapping("/test")
+  public Mono<ResponseEntity<?>> proxy(ProxyExchange<byte[]> proxy) throws Exception {
+    return proxy.uri(home.toString() + "/image/png").get();
+  }
+}
+```
+
+`ProxyExchange` 上的便捷方法使处理程序方法能够发现并增强传入请求的 URI 路径。例如，你可以希望提取路径的尾部元素，以便将其传递给下游：
+
+```java
+@GetMapping("/proxy/path/**")
+public ResponseEntity<?> proxy(ProxyExchange<byte[]> proxy) throws Exception {
+  String path = proxy.path("/proxy/path/")
+  return proxy.uri(home.toString() + "/foos/" + path).get();
+}
+```
+
+Spring MVC 与 Webflux 的所有特性都可用于网关处理程序方法。因此，你可以注入请求头和查询参数，例如，还可以使用映射注解中的声明来约束传入的请求。有关这些特性的更多详细信息，请参阅 Spring MVC 中 `@RequestMapping` 的文档。
+
+你可以使用 `ProxyExchange` 上的 `header()` 方法向下游响应添加标头。
+
+你可以通过向  `get()` 方法（以及其他方法）添加映射器来操作响应头（以及响应中的任何其他内容）。映射器是一个 `Function` 函数，它接受传入的 `ResponseEntity` 并将其转换为传出的 `ResponseEntity`。
+
+系统为"敏感"标头（默认情况下为 `cookie` 和 `authorization`）和"跳过"标头（默认情况下为 `content-length` 和 `host`）提供一流的支持，这些标头不会传递到下游；此外，系统还支持"代理"（`x-forwarded-*`）标头。"跳过"标头的设计理念是，如果将它们复制到下游请求，可能会导致问题。例如：由于 `ProxyExchange` 调用下游端点的方式，内容长度可能已经改变，甚至可能使用 `Transfer-Encoding:chunked` 而不是 `Content-Length` 标头。
+
+
+
+# 通用应用属性
+
+你可以在 `application.properties` 文件、`application.yml` 文件或命令行参数中指定各种属性。本附录提供了常用 Spring Cloud Gateway 属性列表以及使用这些属性的底层类的引用。
+
+> 属性可以来自类路径上的其他 jar 文件，因此你不应将此列表视为完整猎豹。此外，你还可以定义自己的属性。
+
+
+
+| 名称                                                         | 默认值                                                       | 描述                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| spring.cloud.gateway.server.webflux.default-filters          |                                                              | 应用于每条路由的过滤器定义列表                               |
+| spring.cloud.gateway.server.webflux.discovery.locator.enabled | `false`                                                      | 启用 DiscoveryClient 网关集成的标志                          |
+| spring.cloud.gateway.server.webflux.discovery.locator.filters |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.discovery.locator.include-expression | `true`                                                       | 用于评估是否将服务包含在网关集成中的 SpEL 表达式，默认值为：`true` |
+| spring.cloud.gateway.server.webflux.discovery.locator.lower-case-service-id | `false`                                                      | 允许在 `Predicate` 和 `Filter` 中将 serviceId 转换为大写，默认为 `false`。这在 Eureka 中很有用，因为 Eureka 会自动将 serviceId 转换为大写。例如 `MYSERVICE` 将匹配 `/myservice/**` |
+| spring.cloud.gateway.server.webflux.discovery.locator.predicates |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.discovery.locator.route-id-prefix |                                                              | routeId 的前缀默认为 `discoveryClient.getClass().getSimpleName + "_"`。ServiceId 将附加到该前缀上以创建 routeId |
+| spring.cloud.gateway.server.webflux.discovery.locator.url-expression | `lb://` + serviceId                                          | 为每个路由创建 uri 的 SpEL 表达式，默认为 `lb://` + serviceId |
+| spring.cloud.gateway.server.webflux.enabled                  | `true`                                                       | 启用网关功能                                                 |
+| spring.cloud.gateway.server.webflux.fail-on-route-definition-error | `true`                                                       | 路由定义错误时是否报错的选项，默认为 `true`。否则，将记录一条警告信息 |
+| spring.cloud.gateway.server.webflux.filter.add-request-header.enabled | `true`                                                       | 启用 add-request-header 过滤器                               |
+| spring.cloud.gateway.server.webflux.filter.add-response-header.enabled | `true`                                                       | 启用 add-response-header 过滤器                              |
+| spring.cloud.gateway.server.webflux.filter.circuit-breaker.enabled | `true`                                                       | 启用 circuit-breaker 过滤器                                  |
+| spring.cloud.gateway.server.webflux.filter.depupe-response-header.enabled | `true`                                                       | 启用 depupe-response-header 过滤器                           |
+| spring.cloud.gateway.server.webflux.filter.fallback-headers.enabled | `true`                                                       | 启用 fallback-headers 过滤器                                 |
+| spring.cloud.gateway.server.webflux.filter.json-to-grpc.enabled | `true`                                                       | 启用 json-to-grpc 过滤器                                     |
+| spring.cloud.gateway.server.webflux.filter.local-response-cache.enabled | `true`                                                       | 启用 local-response-cache 过滤器                             |
+| spring.cloud.gateway.server.webflux.filter.local-response-cache.request.no-cache-strategy | `skip-update-cache-entry`                                    |                                                              |
+| spring.cloud.gateway.server.webflux.filter.local-response-cache.size |                                                              | 要清除此路由条目的缓存最大大小（以 KB、MB 和 GB 为单位）     |
+| spring.cloud.gateway.server.webflux.filter.local-response-cache.time-to-live | `5m`                                                         | 缓存条目过期时间（以秒 s、分钟 m 和小时 h   表示）           |
+| spring.cloud.gateway.server.webflux.filter.map-request-header.enabled | `true`                                                       | 启用 map-request-header 过滤器                               |
+| spring.cloud.gateway.server.webflux.filter.modify-request-body.enabled | `true`                                                       | 启用 modify-request-body 过滤器                              |
+| spring.cloud.gateway.server.webflux.filter.modify-response-body.enabled | `true`                                                       | 启用 modify-response-body 过滤器                             |
+| spring.cloud.gateway.server.webflux.filter.prefix-path.enabled | `true`                                                       | 启用 prefix-path 过滤器                                      |
+| spring.cloud.gateway.server.webflux.filter.preserve-host-header.enabled | `true`                                                       | 启用 preserve-host-header 过滤器                             |
+| spring.cloud.gateway.server.webflux.filter.redirect-to.enabled | `true`                                                       | 启用 redirect-to 过滤器                                      |
+| spring.cloud.gateway.server.webflux.filter.remove-hop-by-hop.headers |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.remove-hop-by-hop.order |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.remove-request-header.enabled | `true`                                                       | 启用 remove-request-header 过滤器                            |
+| spring.cloud.gateway.server.webflux.filter.remove-request-parameter.enabled | `true`                                                       | 启用 remove-request-parameter 过滤器                         |
+| spring.cloud.gateway.server.webflux.filter.request-header-size.enabled | `true`                                                       | 启用 request-header-size 过滤器                              |
+| spring.cloud.gateway.server.webflux.filter.request-header-to-request-uri.enabled | `true`                                                       | 启用 request-header-to-request-uri 过滤器                    |
+| spring.cloud.gateway.server.webflux.filter.request-rate-limiter.default-key-resolver |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.request-rate-limiter.default-rate-limiter |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.request-rate-limiter.enabled | `true`                                                       | 启用 request-rate-limiter 过滤器                             |
+| spring.cloud.gateway.server.webflux.filter.request-size.enabled | `true`                                                       | 启用 request-size 过滤器                                     |
+| spring.cloud.gateway.server.webflux.filter.retry.enabled     | `true`                                                       | 启用 retry 过滤器                                            |
+| spring.cloud.gateway.server.webflux.filter.rewrite-location-response-header.enabled | `true`                                                       | 启用 rewrite-location-response-header 过滤器                 |
+| spring.cloud.gateway.server.webflux.filter.rewrite-location.enabled | `true`                                                       | 启用 rewrite-location 过滤器                                 |
+| spring.cloud.gateway.server.webflux.filter.rewrite-path.enabled | `true`                                                       | 启用 rewrite-path 过滤器                                     |
+| spring.cloud.gateway.server.webflux.filter.rewrite-request-parameter.enabled | `true`                                                       | 启用 rewrite-request-parameter 过滤器                        |
+| spring.cloud.gateway.server.webflux.filter.rewrite-response-header.enabled | `true`                                                       | 启用 rewrite-response-header 过滤器                          |
+| spring.cloud.gateway.server.webflux.filter.rewrite-response-body.enabled | `true`                                                       | 启用 rewrite-response-body 过滤器                            |
+| spring.cloud.gateway.server.webflux.filter.save-session.enabled | `true`                                                       | 启用 save-session 过滤器                                     |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.content-security-policy | `default-src 'self' https:; font-src 'self' https: data:; img-src 'self' https: data:; object-src 'none'; script-src https:; style-src 'self' https: 'unsafe-inline'` |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.content-type-options | `nosniff`                                                    |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.default-headers |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.disable |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.disabled-headers |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.download-options | `noopen`                                                     |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.enabled | `true`                                                       | 启用 secure-headers 过滤器                                   |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.enabled-headers |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.frame-options | `DENY`                                                       |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.permissions-policy | `accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), cross-origin-isolated=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), geolocation=(), gyroscope=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), navigation-override=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()` |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.permitted-cross-domain-policies | `none`                                                       |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.referrer-policy | `no-referrer`                                                |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.strict-transport-security | `max-age=631138519`                                          |                                                              |
+| spring.cloud.gateway.server.webflux.filter.secure-headers.xss-protection-header | `1; mode=block`                                              |                                                              |
+| spring.cloud.gateway.server.webflux.filter.set-path.enabled  | `true`                                                       | 启用 set-path 过滤器                                         |
+| spring.cloud.gateway.server.webflux.filter.set-request-header.enabled | `true`                                                       | 启用 set-request-header 过滤器                               |
+| spring.cloud.gateway.server.webflux.filter.set-request-host-header.enabled | `true`                                                       | 启用 set-request-host-header 过滤器                          |
+| spring.cloud.gateway.server.webflux.filter.set-response-header.enabled | `true`                                                       | 启用 set-response-header 过滤器                              |
+| spring.cloud.gateway.server.webflux.filter.set-status.enabled | `true`                                                       | 启用 set-status 过滤器                                       |
+| spring.cloud.gateway.server.webflux.filter.strip-prefix.enabled | `true`                                                       | 启用 strip-prefix 过滤器                                     |
+| spring.cloud.gateway.server.webflux.filter.forwarded.by.enabled | `false`                                                      | 启用 Forwarded: by header 过滤器                             |
+| spring.cloud.gateway.server.webflux.filter.forwarded.enabled | `true`                                                       | 启用 forwarded 过滤器                                        |
+| spring.cloud.gateway.server.webflux.filter.global-filter.adapt-cached-body.enabled | `true`                                                       | 启用 adapt-cached-body 全局过滤器                            |
+| spring.cloud.gateway.server.webflux.filter.global-filter.forward-path.enabled | `true`                                                       | 启用 forward-path 全局过滤器                                 |
+| spring.cloud.gateway.server.webflux.filter.global-filter.forward-routing.enabled | `true`                                                       | 启用 forward-routing 全局过滤器                              |
+| spring.cloud.gateway.server.webflux.filter.global-filter.load-balancer-client.enabled | `true`                                                       | 启用 load-balancer-client 全局过滤器                         |
+| spring.cloud.gateway.server.webflux.filter.global-filter.load-balancer-cache.enabled | `true`                                                       | 启用  load-balancer-cache 全局过滤器，允许使用 `LoadResponseCache` 过滤器在路由级别添加特定配置 |
+| spring.cloud.gateway.server.webflux.filter.global-filter.local-response-cache.enabled | `true`                                                       | 启用 netty-routing 全局过滤器                                |
+| spring.cloud.gateway.server.webflux.filter.global-filter.netty-routing.enabled | `true`                                                       | 启用 adapt-cached-body 全局过滤器                            |
+| spring.cloud.gateway.server.webflux.filter.global-filter.netty-write-response.enabled | `true`                                                       | 启用 netty-write-response 全局过滤器                         |
+| spring.cloud.gateway.server.webflux.filter.global-filter.reactive-load-balancer-client.enabled | `true`                                                       | 启用 reactive-load-balancer-client 全局过滤器                |
+| spring.cloud.gateway.server.webflux.filter.global-filter.remove-cached-body.enabled | `true`                                                       | 启用 remove-cached-body 全局过滤器                           |
+| spring.cloud.gateway.server.webflux.filter.global-filter.route-to-request-url.enabled | `true`                                                       | 启用 route-to-request-url 全局过滤器                         |
+| spring.cloud.gateway.server.webflux.filter.global-filter.websocket-routing.enabled | `true`                                                       | 启用 websocket-routing 全局过滤器                            |
+| spring.cloud.gateway.server.webflux.filter.globalcors.add-to-simple-url-handler-mapping | `false`                                                      | 是否应将全局 CORS 配置添加到 URL 处理程序中                  |
+| spring.cloud.gateway.server.webflux.filter.globalcors.cors-configurations |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.handler-mapping.order    | `1`                                                          | `RoutePredicateHandlerMapping` 的优先级                      |
+| spring.cloud.gateway.server.webflux.httpclient.compression   | `false`                                                      | 为 Netty `HttpClient` 开启压缩功能                           |
+| spring.cloud.gateway.server.webflux.httpclient.connect-timeout |                                                              | 连接超时时间以毫秒为单位，默认为 30 秒                       |
+| spring.cloud.gateway.server.webflux.httpclient.max-header-size |                                                              | 最大响应头大小                                               |
+| spring.cloud.gateway.server.webflux.httpclient.max-initial-line-length |                                                              | 最大初始线段大小                                             |
+| spring.cloud.gateway.server.webflux.httpclient.pool.acquire-timeout |                                                              | 仅适用于 `FIXED` 类型，获取数据等待的最长时间（以毫秒为单位） |
+| spring.cloud.gateway.server.webflux.httpclient.pool.eviction-interval | `0`                                                          | 按指定时间间隔在后台执行定期驱逐检查。默认禁用（`Duration#ZERO`） |
+| spring.cloud.gateway.server.webflux.httpclient.pool.leasing-strategy | `fifo`                                                       | 配置池的租赁策略（`fifo` 或 `lifo`），默认为 `fifo`，这也是 Netty 的默认策略 |
+| spring.cloud.gateway.server.webflux.httpclient.pool.max-connections |                                                              | 仅适用于 `FIXED` 类型，在开始对现有连接进行待处理收购之前的最大连接数 |
+| spring.cloud.gateway.server.webflux.httpclient.pool.max-idle-time |                                                              | 通道关闭前的等待时间（以毫秒为单位）。如果为 `NULL`，则没有最大空闲时间限制 |
+| spring.cloud.gateway.server.webflux.httpclient.pool.max-life-time |                                                              | 通道关闭前的持续时间。如果为 `NULL`，则没有最大生存时间      |
+| spring.cloud.gateway.server.webflux.httpclient.pool.metrics  | `false`                                                      | 启用此功能后，即可在 Micrometer 中收集和注册通道指标。默认情况下禁用 |
+| spring.cloud.gateway.server.webflux.httpclient.pool.name     | `proxy`                                                      | 通道池映射名称，默认为 `proxy`                               |
+| spring.cloud.gateway.server.webflux.httpclient.pool.type     | `elastic`                                                    | HttpClient 要使用的连接池类型（`elastic`、`fixed` 或 `disabled`） |
+| spring.cloud.gateway.server.webflux.httpclient.proxy.host    |                                                              | Netty HttpClient 代理配置的主机名                            |
+| spring.cloud.gateway.server.webflux.httpclient.proxy.non-proxy-hosts-pattern |                                                              | 用于指定主机列表的正则表达式（Java），这些主机应直接访问，无需经过代理 |
+| spring.cloud.gateway.server.webflux.httpclient.proxy.password |                                                              | Netty HttpClient 代理配置的密码                              |
+| spring.cloud.gateway.server.webflux.httpclient.proxy.port    |                                                              | Netty HttpClient 代理配置的端口                              |
+| spring.cloud.gateway.server.webflux.httpclient.proxy.type    | `http`                                                       | Netty HttpClient 代理配置的代理类型（`http`、`socks4` 或 `socks5`） |
+| spring.cloud.gateway.server.webflux.httpclient.proxy.username |                                                              | Netty HttpClient 代理配置的用户名                            |
+| spring.cloud.gateway.server.webflux.httpclient.response-timeout |                                                              | 响应超时时间                                                 |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.close-notify-flush-timeout | `3000ms`                                                     | SSL 关闭通知刷新超时时间，默认为 3000ms                      |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.close-notify-read-timeout | `0`                                                          | SSL 关闭通知读取超时时间，默认为 0                           |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.handshake-timeout | `10000ms`                                                    | SSL 握手超时时间，默认为 10000ms                             |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.key-password |                                                              | 密钥密码，默认值与密钥库密码相同                             |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.key-store |                                                              | Netty HttpClient 的密钥库路径                                |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.key-store-password |                                                              | 密钥库密码                                                   |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.key-store-provider |                                                              | Netty HttpClient 的密钥库提供程序，可选字段                  |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.key-store-type | `JKS`                                                        | Netty HttpClient 的密钥库类型，默认值为 JKS                  |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.ssl-bundle |                                                              | 要使用的 SSL 证书包的名称                                    |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.trusted-x509-certificates |                                                              | 用于验证远程端点证书受信任证书                               |
+| spring.cloud.gateway.server.webflux.httpclient.ssl.use-insecure-trust-manager | `false`                                                      | 安装 Netty 的 `InsecureTrustManagerFactory`。这存在安全隐患，不适用于生产环境 |
+| spring.cloud.gateway.server.webflux.httpclient.websocket.max-frame-payload-length |                                                              | 帧有效载荷最大长度                                           |
+| spring.cloud.gateway.server.webflux.httpclient.webscoket.proxy-ping | `true`                                                       | 代理向下游服务发送 ping 帧，默认为 `true`                    |
+| spring.cloud.gateway.server.webflux.httpclient.wiretap       | `false`                                                      | 为 Netty HttpClient  启用通信监听调试功能                    |
+| spring.cloud.gateway.server.webflux.httpserver.customizer-enabled | `false`                                                      | 启用 Netty HttpServer 的网关自定义功能，默认值为 false       |
+| spring.cloud.gateway.server.webflux.loadbalancer.use404      | `false`                                                      |                                                              |
+| spring.cloud.gateway.server.webflux.metrics.enabled          | `false`                                                      | 启用指标数据收集功能                                         |
+| spring.cloud.gateway.server.webflux.metrics.path-tags.enabled | `false`                                                      | 启用网关路径标签提供程序                                     |
+| spring.cloud.gateway.server.webflux.metrics.prefix           | `spring.cloud.gateway`                                       | 网关发出的所有指标的前缀                                     |
+| spring.cloud.gateway.server.webflux.metrics.tags             |                                                              | 标签映射已添加到指标中                                       |
+| spring.cloud.gateway.server.webflux.metrics.tags.path.enabled | `false`                                                      | 启用网关路径标签提供程序                                     |
+| spring.cloud.gateway.server.webflux.observability.enabled    | `true`                                                       | 是否需要启用 Micrometer 可观测性支持                         |
+| spring.cloud.gateway.server.webflux.predicate.after.enabled  | `true`                                                       | 开启后置 `Predicate`                                         |
+| spring.cloud.gateway.server.webflux.predicate.before.enabled | `true`                                                       | 开启前置 `Predicate`                                         |
+| spring.cloud.gateway.server.webflux.predicate.between.enabled | `true`                                                       | 开启中间 `Predicate`                                         |
+| spring.cloud.gateway.server.webflux.predicate.cloud-foundry-route-service.enabled | `true`                                                       | 启用 cloud-foundry-route-service `Predicate`                 |
+| spring.cloud.gateway.server.webflux.predicate.cookie.enabled | `true`                                                       | 开启 cookie `Predicate`                                      |
+| spring.cloud.gateway.server.webflux.predicate.header.enabled | `true`                                                       | 开启 header `Predicate`                                      |
+| spring.cloud.gateway.server.webflux.predicate.host.enabled   | `true`                                                       | 开启 host `Predicate`                                        |
+| spring.cloud.gateway.server.webflux.predicate.host.include-port | `true`                                                       | 主机名中应包含端口                                           |
+| spring.cloud.gateway.server.webflux.predicate.method.enabled | `true`                                                       | 开启 method `Predicate`                                      |
+| spring.cloud.gateway.server.webflux.predicate.path.enabled   | `true`                                                       | 开启 path `Predicate`                                        |
+| spring.cloud.gateway.server.webflux.predicate.query.enabled  | `true`                                                       | 开启 query `Predicate`                                       |
+| spring.cloud.gateway.server.webflux.predicate.read-body.enabled | `true`                                                       | 开启 read-body `Predicate`                                   |
+| spring.cloud.gateway.server.webflux.predicate.remote-addr.enabled | `true`                                                       | 开启 remote-addr `Predicate`                                 |
+| spring.cloud.gateway.server.webflux.predicate.weight.enabled | `true`                                                       | 开启 weight `Predicate`                                      |
+| spring.cloud.gateway.server.webflux.predicate.xforwarded-remote-addr.enabled | `true`                                                       | 开启 xforwarded-remote-addr `Predicate`                      |
+| spring.cloud.gateway.server.webflux.redis-rate-limiter.burst-capacity-header | `X-RateLimit-Burst-Capacity`                                 | 返回突发容量配置的标头名称                                   |
+| spring.cloud.gateway.server.webflux.redis-rate-limiter.config |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.redis-rate-limiter.include-headers | `true`                                                       | 是否包含速率限制器信息的标头，默认为 `true`                  |
+| spring.cloud.gateway.server.webflux.redis-rate-limiter.remaining-header | `X-RateLimit-Remaining`                                      | 返回当前秒内剩余请求数的标头名称                             |
+| spring.cloud.gateway.server.webflux.redis-rate-limiter.replenish-rate-header | `X-RateLimit-Replenish-Rate`                                 | 返回填充速率配置的标头名称                                   |
+| spring.cloud.gateway.server.webflux.redis-rate-limiter.requested-tokens-header | `X-RateLimit-Requested-Tokens`                               | 返回所请求令牌配置的标头名称                                 |
+| spring.cloud.gateway.server.webflux.redis-route-definition-repository.enabled | `true`                                                       | 是否应启用 RedisRouteDefinitionRepository                    |
+| spring.cloud.gateway.server.webflux.restrictive-property-accessor.enabled | `true`                                                       | 限制 SpEL 中的方法和属性访问                                 |
+| spring.cloud.gateway.server.webflux.route-filter-cache.enabled | `false`                                                      | 启用路由过滤器的缓存，默认为 false                           |
+| spring.cloud.gateway.server.webflux.route-refresh-listener.enabled | `true`                                                       | 是否应该启用 RouteRefreshListener                            |
+| spring.cloud.gateway.server.webflux.routes                   |                                                              | 路由列表                                                     |
+| spring.cloud.gateway.server.webflux.set-status.original-status-header-name |                                                              | 包含代理请求的 HTTP 代码的标头名称                           |
+| spring.cloud.gateway.server.webflux.streaming-media-types    |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.trusted-proxies          |                                                              | 定义代理的正则表达式，当代理出现在 Forwarded 或 X-Forwarded 标头中时，这些代理是可信的 |
+| spring.cloud.gateway.server.webflux.version.default-version  |                                                              | 默认版本                                                     |
+| spring.cloud.gateway.server.webflux.version.detect-supported-versions | `true`                                                       | 指示是否使用映射中出现的 API 版本进行受支持版本验证（true），或仅使用显式配置的版本（false）。默认为 true |
+| spring.cloud.gateway.server.webflux.version.header-name      |                                                              | 用于提取 API 版本的标头名称                                  |
+| spring.cloud.gateway.server.webflux.version.media-type       |                                                              | 用于提取 API 版本的媒体类型名称                              |
+| spring.cloud.gateway.server.webflux.version.path-segment     |                                                              | 用于提取 API 版本的路径段索引                                |
+| spring.cloud.gateway.server.webflux.version.requested-param-name |                                                              | 用于提取 API 版本的请求参数名称                              |
+| spring.cloud.gateway.server.webflux.version.required         | `false`                                                      |                                                              |
+| spring.cloud.gateway.server.webflux.version.supported-versions |                                                              |                                                              |
+| spring.cloud.gateway.server.webflux.x-forwarded.enabled      | `true`                                                       | 开启 XForwardedHeadersFilter                                 |
+| spring.cloud.gateway.server.webflux.x-forwarded.for-append   | `true`                                                       | 开启 X-Forwarded-For 作为列表附加                            |
+| spring.cloud.gateway.server.webflux.x-forwarded.for-enabled  | `true`                                                       | 开启 X-Forwarded-For                                         |
+| spring.cloud.gateway.server.webflux.x-forwarded.host-append  | `true`                                                       | 开启 X-Forwarded-Host 作为列表附加                           |
+| spring.cloud.gateway.server.webflux.x-forwarded.host-enabled | `true`                                                       | 开启 X-Forwarded-Host                                        |
+| spring.cloud.gateway.server.webflux.x-forwarded.order        | `0`                                                          | XForwardedOrder 顺序                                         |
+| spring.cloud.gateway.server.webflux.x-forwarded.port-append  | `true`                                                       | 开启 X-Forwarded-Port 作为列表附加                           |
+| spring.cloud.gateway.server.webflux.x-forwarded.port-enabled | `true`                                                       | 开启 X-Forwarded-Port                                        |
+| spring.cloud.gateway.server.webflux.x-forwarded.prefix-append | `true`                                                       | 开启 X-Forwarded-Prefix 作为列表附加                         |
+| spring.cloud.gateway.server.webflux.x-forwarded.prefix-enabled | `true`                                                       | 开启 X-Forwarded-Prefix                                      |
+| spring.cloud.gateway.server.webflux.x-forwarded.proto-append | `true`                                                       | 开启 X-Forwarded-Proto 作为列表附加                          |
+| spring.cloud.gateway.server.webflux.x-forwarded.proto-enabled | `true`                                                       | 开启 X-Forwarded-Proto                                       |
+| spring.cloud.gateway.server.webmvc.form-filter.enabled       | `true`                                                       | 开启 form-filter                                             |
+| spring.cloud.gateway.server.webmvc.forwarded-by-enabled      | `true`                                                       | 是否向 Forwarded 标头添加 by 参数                            |
+| spring.cloud.gateway.server.webmvc.forwarded-request-headers-filter.enabled | `true`                                                       | 启用 forwarded-request-headers 过滤器                        |
+| spring.cloud.gateway.server.webmvc.remove-content-length-request-headers-filter.enabled | `true`                                                       | 启用 remove-content-length-request-headers 过滤器            |
+| spring.cloud.gateway.server.webmvc.remove-hop-by-hop-request-headers-filter.enabled | `true`                                                       | 启用 remove-hop-by-hop-request-headers 过滤器                |
+| spring.cloud.gateway.server.webmvc.remove-hop-by-hop-response-headers-filter.enabled | `true`                                                       | 启用 remove-hop-by-hop-response-headers 过滤器               |
+| spring.cloud.gateway.server.webmvc.remove-https2-status-response-headers-filter.enabled | `true`                                                       | 启用 remove-https2-status-response-headers 过滤器            |
+| spring.cloud.gateway.server.webmvc.routes                    |                                                              | 路由列表                                                     |
+| spring.cloud.gateway.server.webmvc.routes-map                |                                                              | 路由映射                                                     |
+| spring.cloud.gateway.server.webmvc.streaming-buffer-size     | `16384`                                                      | 流媒体 MIME 类型的缓冲区大小                                 |
+| spring.cloud.gateway.server.webmvc.transfer-encoding-normalization-request-headers-filter.enabled | `true`                                                       | 启用 transfer-encoding-normalization-request-headers 过滤器  |
+| spring.cloud.gateway.server.webmvc.trusted-proxies           |                                                              | 定义当代理出现在 Forwarded 或 X-Forwarded 标头中时受信任的代理的正则表达式 |
+| spring.cloud.gateway.server.webmvc.use-framework-retry-filter | `false`                                                      | 如果 Spring Retry 已在类路径中，但你仍然希望使用 Spring Framework Retry 作为重试过滤器，请将此属性设置为 true |
+| spring.cloud.gateway.server.webmvc.weight-calculator-filter.enabled | `true`                                                       | 开启 weight-calculator 过滤器                                |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.enabled | `true`                                                       | 开启 XForwardedHeadersFilter                                 |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.for-append | `true`                                                       | 开启 X-Forwarded-For 作为列表附加                            |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.for-enabled | `true`                                                       | 开启 x-forwarded-request-headers 过滤器                      |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.host-append | `true`                                                       | 开启 X-Forwarded-Host 作为列表附加                           |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.host-enabled | `true`                                                       | 开启 X-Forwarded-Host                                        |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.order | `0`                                                          | XForwardedOrder 顺序                                         |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.port-append | `true`                                                       | 开启 X-Forwarded-Port 作为列表附加                           |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.port-enabled | `true`                                                       | 开启 X-Forwarded-Port                                        |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.prefix-append | `true`                                                       | 开启 X-Forwarded-Prefix 作为列表附加                         |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.prefix-enabled | `true`                                                       | 开启 X-Forwarded-Prefix                                      |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.proto-append | `true`                                                       | 开启 X-Forwarded-Proto 作为列表附加                          |
+| spring.cloud.gateway.server.webmvc.x-forwarded-request-headers-filter.proto-enabled | `true`                                                       | 开启 X-Forwarded-Proto                                       |
+
+
+
+### 可观测性元数据
+
+
+
+#### 可观测-指标
+
+下面列出了该项目声明的所有指标。
+
+##### 网关 HTTP 客户端观测
+
+> 通过网关发送请求时创建的观察结果。
+
+指标名称 `http.client.requests`（由 `org.springframework.cloud.gateway.filter.headers.observation.DefaultGatewayObservationConvention` 类转换），类型为 `Timer`。
+
+指标名称 `http.client.requests.active`（由 `org.springframework.cloud.gateway.filter.headers.observation.DefaultGatewayObservationConvention` 类转换），类型为 `long task timer`。
+
+> 在开始观察后添加的键值可能在 *.active 指标中缺失
+
+> Micrometer 内部使用纳秒作为基本单位。但是，每个后端程序都会确定实际的基本单位。（例如，Prometheus 使用秒）
+
+封闭类的完全限定名称 `org.springframework.cloud.gateway.filter.headers.observation.GatewayDocumentedObservation`。
+
+*表1：低基数键*
+
+| 名称                                     | 描述                    |
+| ---------------------------------------- | ----------------------- |
+| `http.method` （必需）                   | HTTP 方法               |
+| `http.status_code`（必需）               | HTTP 状态码             |
+| `spring.cloud.gateway.route.id`（必需）  | 路由ID                  |
+| `spring.cloud.gateway.route.uri`（必需） | 从路由中获取的 HTTP URI |
+
+
+
+#### 可观测-Span
+
+下面列出了本项目声明的所有 span。
+
+##### 网关 HTTP 客户端 Span
+
+> 通过网关发送请求时创建的观察结果。
+
+Span 名称 `http.client.requests`（由 `org.springframework.cloud.gateway.filter.headers.observation.DefaultGatewayObservationConvention` 类转换）·
+
+封闭类的完全限定名称 `org.springframework.cloud.gateway.filter.headers.observation.GatewayDocumentedObservation`。
+
+*表2：标记键*
+
+| 名称                                     | 描述                    |
+| ---------------------------------------- | ----------------------- |
+| `http.method` （必需）                   | HTTP 方法               |
+| `http.status_code`（必需）               | HTTP 状态码             |
+| `http.uri`（必需）                       | 完整的 HTTP URL         |
+| `spring.cloud.gateway.route.id`（必需）  | 路由ID                  |
+| `spring.cloud.gateway.route.uri`（必需） | 从路由中获取的 HTTP URI |
+
+
+
+#### 可观测-转换
+
+下面列出了本项目声明的所有 `GlobalObservationConvention` 和 `ObservationConvention`。
+
+*表3：ObservationConvention 实现*
+
+| ObservationConvention 类名                                   | 适用的 ObservationContext 类名 |
+| ------------------------------------------------------------ | ------------------------------ |
+| `org.springframework.cloud.gateway.filter.headers.observation.DefaultGatewayObservationConvention` | `GatewayContext`               |
+| `org.springframework.cloud.gateway.filter.headers.observation.GlobalObservationConvention` | `GatewayContext`               |
+
