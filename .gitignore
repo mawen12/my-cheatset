@@ -1,2 +1,3 @@
 *.docset
 .DS_Store
+*.decompress
